@@ -4,6 +4,7 @@ import { api } from '@/lib/api';
 
 import StoreLayout, { StoreTab } from '@/components/store/StoreLayout';
 import OrderHistoryPanel from '@/components/store/OrderHistoryPanel';
+import StoreLoadState from '@/components/store/StoreLoadState';
 
 import Button from '@/components/ui/Button';
 
@@ -44,6 +45,8 @@ export default function StoreHomePage() {
   const tabParam = searchParams.get('tab') as StoreTab | null;
   const paidSuccess = searchParams.get('paid') === '1';
   const [store, setStore] = useState<StoreInfo | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [faqs, setFaqs] = useState<Array<{ question: string; answer: string }>>([]);
   const [openFaq, setOpenFaq] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<StoreTab>(
@@ -57,16 +60,24 @@ export default function StoreHomePage() {
 
 
   useEffect(() => {
+    setLoading(true);
+    setLoadError('');
+    setStore(null);
 
-    api.get(`/store/${slug}`).then((res) => setStore(res.data.data)).catch(console.error);
+    api.get(`/store/${slug}`)
+      .then((res) => setStore(res.data.data))
+      .catch((err) => setLoadError(err instanceof Error ? err.message : 'Store not found'))
+      .finally(() => setLoading(false));
 
-    api.get(`/store/${slug}/faqs`).then((res) => setFaqs(res.data.data)).catch(console.error);
-
+    api.get(`/store/${slug}/faqs`)
+      .then((res) => setFaqs(res.data.data))
+      .catch(() => setFaqs([]));
   }, [slug]);
 
-
-
-  if (!store) return <div className="min-h-screen flex items-center justify-center bg-navy text-gray-400">Loading store...</div>;
+  if (loading || loadError) {
+    return <StoreLoadState slug={slug} loading={loading} error={loadError} />;
+  }
+  if (!store) return null;
 
 
 
