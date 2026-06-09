@@ -1,0 +1,77 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-navy: #0a1120;
+  --color-navy-light: #111d33;
+  --color-navy-card: #162035;
+  --color-navy-border: #243352;
+  --color-gold: #f5b800;
+  --color-gold-hover: #e0a800;
+  --color-gold-dark: #1a1500;
+}
+
+:root {
+  --background: #0a1120;
+  --foreground: #ffffff;
+}
+
+html {
+  scroll-behavior: smooth;
+  overflow-x: clip;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Inter, system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: clip;
+  min-height: 100dvh;
+}
+
+#root {
+  min-height: 100dvh;
+}
+
+.safe-bottom {
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+}
+
+.safe-x {
+  padding-left: max(1rem, env(safe-area-inset-left));
+  padding-right: max(1rem, env(safe-area-inset-right));
+}
+
+@keyframes whatsapp-blink {
+  0%, 100% {
+    opacity: 0.35;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.85;
+    transform: scale(1.12);
+  }
+}
+
+@keyframes whatsapp-ping {
+  0% {
+    opacity: 0.55;
+    transform: scale(1);
+  }
+  70% {
+    opacity: 0;
+    transform: scale(1.55);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.55);
+  }
+}
+
+.whatsapp-blink {
+  animation: whatsapp-blink 2s ease-in-out infinite;
+}
+
+.whatsapp-ping {
+  animation: whatsapp-ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
