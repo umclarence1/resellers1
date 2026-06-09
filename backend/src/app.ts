@@ -19,6 +19,10 @@ import webhookRoutes from './routes/webhook.routes';
 
 const app = express();
 
+if (process.env.VERCEL) {
+  app.set('trust proxy', 1);
+}
+
 app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' },
 }));

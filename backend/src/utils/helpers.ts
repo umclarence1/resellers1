@@ -1,4 +1,4 @@
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 
 export const generateOrderId = (): string => {
   const timestamp = Date.now().toString(36).toUpperCase();
@@ -11,8 +11,8 @@ export const generateReferralCode = (): string => {
   return `RS${num}`;
 };
 
-export const generateApiKey = (): string => `dbk_${uuidv4().replace(/-/g, '')}`;
-export const generateSecretKey = (): string => `dbs_${uuidv4().replace(/-/g, '')}${uuidv4().replace(/-/g, '').substring(0, 16)}`;
+export const generateApiKey = (): string => `dbk_${randomUUID().replace(/-/g, '')}`;
+export const generateSecretKey = (): string => `dbs_${randomUUID().replace(/-/g, '')}${randomUUID().replace(/-/g, '').substring(0, 16)}`;
 
 export const slugify = (text: string): string =>
   text
