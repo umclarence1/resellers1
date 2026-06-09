@@ -3,13 +3,25 @@ import path from 'path';
 import fs from 'fs';
 import { env } from '../config/env';
 
-const uploadDir = path.join(process.cwd(), env.uploadDir);
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
+const uploadDir = process.env.VERCEL
+  ? path.join('/tmp', env.uploadDir)
+  : path.join(process.cwd(), env.uploadDir);
+
+function ensureUploadDir(): void {
+  if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
+  }
 }
 
 const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, uploadDir),
+  destination: (_req, _file, cb) => {
+    try {
+      ensureUploadDir();
+      cb(null, uploadDir);
+    } catch (err) {
+      cb(err as Error, uploadDir);
+    }
+  },
   filename: (_req, file, cb) => {
     const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
     cb(null, `${unique}${path.extname(file.originalname)}`);
