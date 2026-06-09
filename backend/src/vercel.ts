@@ -14,7 +14,10 @@ function ensureReady(): Promise<void> {
   return ready;
 }
 
-app.use(async (_req, _res, next) => {
+app.use(async (req, res, next) => {
+  if (req.path === '/api/health') {
+    return next();
+  }
   try {
     await ensureReady();
     next();

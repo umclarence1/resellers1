@@ -9,7 +9,7 @@ export const connectDB = async (): Promise<void> => {
   } catch (error) {
     if (env.nodeEnv !== 'development') {
       console.error('MongoDB connection error:', error);
-      process.exit(1);
+      throw error;
     }
   }
 
@@ -23,6 +23,6 @@ export const connectDB = async (): Promise<void> => {
     console.log('In-memory MongoDB connected');
   } catch (error) {
     console.error('MongoDB connection error:', error);
-    process.exit(1);
+    throw error;
   }
 };
