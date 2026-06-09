@@ -19,8 +19,31 @@ import webhookRoutes from './routes/webhook.routes';
 
 const app = express();
 
+let dbReady: Promise<void> | null = null;
+
+async function ensureDbReady(): Promise<void> {
+  if (!dbReady) {
+    dbReady = (async () => {
+      const { connectDB } = await import('./config/db');
+      const { seedDatabase } = await import('./services/seedService');
+      await connectDB();
+      await seedDatabase();
+    })();
+  }
+  return dbReady;
+}
+
 if (process.env.VERCEL) {
   app.set('trust proxy', 1);
+  app.use(async (req, _res, next) => {
+    if (req.path === '/api/health') return next();
+    try {
+      await ensureDbReady();
+      next();
+    } catch (err) {
+      next(err);
+    }
+  });
 }
 
 app.use(helmet({

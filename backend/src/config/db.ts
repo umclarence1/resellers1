@@ -3,7 +3,7 @@ import { env } from './env';
 
 export const connectDB = async (): Promise<void> => {
   try {
-    await mongoose.connect(env.mongodbUri, { serverSelectionTimeoutMS: 4000 });
+    await mongoose.connect(env.mongodbUri, { serverSelectionTimeoutMS: 15000 });
     console.log('MongoDB connected');
     return;
   } catch (error) {
