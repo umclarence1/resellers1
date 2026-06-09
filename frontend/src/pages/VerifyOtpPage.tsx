@@ -15,21 +15,30 @@ export default function VerifyOtpPage() {
   const inputs = useRef<(HTMLInputElement | null)[]>([]);
   const submittingRef = useRef(false);
 
+  const redirectToLogin = useCallback((role: string, message?: string) => {
+    sessionStorage.removeItem('otpEmail');
+    const loginRoutes: Record<string, string> = {
+      admin: '/login/admin',
+      dealer: '/login/dealer',
+      reseller: '/login/reseller',
+    };
+    navigate(loginRoutes[role] || '/login/reseller', message ? { state: { message } } : undefined);
+  }, [navigate]);
+
   useEffect(() => {
     const stored = sessionStorage.getItem('otpEmail');
+    const role = sessionStorage.getItem('otpRole') || 'reseller';
     if (!stored) {
-      const role = sessionStorage.getItem('otpRole') || 'reseller';
-      const loginRoutes: Record<string, string> = {
-        admin: '/login/admin',
-        dealer: '/login/dealer',
-        reseller: '/login/reseller',
-      };
-      navigate(loginRoutes[role] || '/login/reseller');
-    } else {
-      setEmail(stored);
-      setTimeout(() => inputs.current[0]?.focus(), 100);
+      redirectToLogin(role);
+      return;
     }
-  }, [navigate]);
+    if (stored === 'admin@localhost.com') {
+      redirectToLogin('admin', 'Please sign in again with wilberforceboanu2002@gmail.com');
+      return;
+    }
+    setEmail(stored);
+    setTimeout(() => inputs.current[0]?.focus(), 100);
+  }, [navigate, redirectToLogin]);
 
   const submitOtp = useCallback(async (code: string) => {
     if (code.length !== 6 || submittingRef.current || !email) return;
@@ -46,14 +55,19 @@ export default function VerifyOtpPage() {
       sessionStorage.removeItem('otpRole');
       navigate(routes[user.role] || '/');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Verification failed');
+      const message = err instanceof Error ? err.message : 'Verification failed';
+      if (message.toLowerCase().includes('user not found')) {
+        redirectToLogin(sessionStorage.getItem('otpRole') || 'reseller', 'Session expired. Please sign in again.');
+        return;
+      }
+      setError(message);
       setOtp(['', '', '', '', '', '']);
       inputs.current[0]?.focus();
       submittingRef.current = false;
     } finally {
       setLoading(false);
     }
-  }, [email, verifyOtp, navigate]);
+  }, [email, verifyOtp, navigate, redirectToLogin]);
 
   useEffect(() => {
     const code = otp.join('');
@@ -97,7 +111,12 @@ export default function VerifyOtpPage() {
       setOtp(['', '', '', '', '', '']);
       inputs.current[0]?.focus();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to resend');
+      const message = err instanceof Error ? err.message : 'Failed to resend';
+      if (message.toLowerCase().includes('user not found')) {
+        redirectToLogin(sessionStorage.getItem('otpRole') || 'reseller', 'Please sign in again with your current email.');
+        return;
+      }
+      setError(message);
     }
   };
 

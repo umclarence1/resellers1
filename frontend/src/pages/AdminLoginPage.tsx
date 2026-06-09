@@ -5,7 +5,7 @@ import Button from '@/components/ui/Button';
 import FormAlert from '@/components/ui/FormAlert';
 import { validateLoginFields } from '@/lib/form-validation';
 import AuthLayout from '@/components/layout/AuthLayout';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { dashboardRouteForRole } from '@/lib/dashboard-routes';
 import DevLoginHint from '@/components/ui/DevLoginHint';
 
@@ -17,6 +17,8 @@ export default function AdminLoginPage() {
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const sessionMessage = (location.state as { message?: string } | null)?.message;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -70,7 +72,7 @@ export default function AdminLoginPage() {
             if (fieldErrors.password) setFieldErrors((prev) => ({ ...prev, password: '' }));
           }}
         />
-        <FormAlert message={error} />
+        <FormAlert message={sessionMessage || error} />
         <Button type="submit" className="w-full" loading={loading}>Continue</Button>
       </form>
     </AuthLayout>

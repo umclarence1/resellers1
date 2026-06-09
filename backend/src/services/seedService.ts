@@ -1,5 +1,6 @@
 import bcrypt from 'bcryptjs';
 import { User } from '../models/User';
+import { Otp } from '../models/Otp';
 import { Package } from '../models/Package';
 import { Faq } from '../models/Faq';
 import { Setting } from '../models/Setting';
@@ -54,6 +55,7 @@ export const seedDatabase = async (): Promise<void> => {
   } else {
     let adminUpdated = false;
     if (admin.email !== adminEmail) {
+      await Otp.deleteMany({ email: admin.email });
       admin.email = adminEmail;
       adminUpdated = true;
     }
