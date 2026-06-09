@@ -38,18 +38,38 @@ export const seedDatabase = async (): Promise<void> => {
     await existingSettings.save();
   }
 
-  const adminExists = await User.findOne({ role: 'admin' });
-  if (!adminExists) {
+  const adminEmail = env.admin.email.toLowerCase();
+  let admin = await User.findOne({ role: 'admin' });
+  if (!admin) {
     const hashedPassword = await bcrypt.hash(env.admin.password, 12);
-    await User.create({
+    admin = await User.create({
       fullName: env.admin.name,
-      email: env.admin.email,
+      email: adminEmail,
       phone: '0200000000',
       password: hashedPassword,
       role: 'admin',
       status: 'active',
     });
     console.log('Admin user seeded');
+  } else {
+    let adminUpdated = false;
+    if (admin.email !== adminEmail) {
+      admin.email = adminEmail;
+      adminUpdated = true;
+    }
+    if (admin.fullName !== env.admin.name) {
+      admin.fullName = env.admin.name;
+      adminUpdated = true;
+    }
+    const passwordMatches = await bcrypt.compare(env.admin.password, admin.password);
+    if (!passwordMatches) {
+      admin.password = await bcrypt.hash(env.admin.password, 12);
+      adminUpdated = true;
+    }
+    if (adminUpdated) {
+      await admin.save();
+      console.log(`Admin user synced to ${adminEmail}`);
+    }
   }
 
   const dealerExists = await User.findOne({ role: 'dealer', email: env.demo.dealerEmail });
