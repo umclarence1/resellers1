@@ -8,6 +8,7 @@ import { useSearchParams, Link, useNavigate } from 'react-router-dom';
 type Fulfillment =
   | { type: 'wallet_deposit'; alreadyProcessed?: boolean }
   | { type: 'customer_purchase'; storeSlug?: string; orderId?: string; alreadyProcessed?: boolean }
+  | { type: 'pool_deposit'; alreadyProcessed?: boolean; amount?: number }
   | { type: 'unknown' };
 
 function PaymentCallback() {
@@ -33,6 +34,9 @@ function PaymentCallback() {
 
         if (ok && payment.fulfillment?.type === 'wallet_deposit') {
           setTimeout(() => navigate('/dealer/wallet?funded=1'), 2500);
+        }
+        if (ok && payment.fulfillment?.type === 'pool_deposit') {
+          setTimeout(() => navigate('/admin/settings?poolFunded=1'), 2500);
         }
         if (ok && payment.fulfillment?.type === 'customer_purchase' && payment.fulfillment.storeSlug) {
           setTimeout(
@@ -73,6 +77,11 @@ function PaymentCallback() {
                 {storeSlug && ' Redirecting to order history...'}
               </p>
             )}
+            {fulfillment?.type === 'pool_deposit' && (
+              <p className="text-gray-500 mb-6">
+                GHS {fulfillment.amount ?? ''} added to the withdrawal pool. Redirecting to settings...
+              </p>
+            )}
             {!fulfillment || fulfillment.type === 'unknown' ? (
               <p className="text-gray-500 mb-6">Your payment was received successfully.</p>
             ) : null}
@@ -83,6 +92,11 @@ function PaymentCallback() {
               {fulfillment?.type === 'wallet_deposit' && (
                 <Link to="/dealer/wallet?funded=1">
                   <Button className="w-full">Go to wallet</Button>
+                </Link>
+              )}
+              {fulfillment?.type === 'pool_deposit' && (
+                <Link to="/admin/settings?poolFunded=1">
+                  <Button className="w-full">Go to settings</Button>
                 </Link>
               )}
               {storeSlug && (

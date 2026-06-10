@@ -7,6 +7,7 @@ import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import { formatCurrency } from '@/lib/utils';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { redirectToPaystack } from '@/lib/paystack';
 
 export default function DealerWalletPage() {
   const { user, loading } = useAuth();
@@ -16,6 +17,8 @@ export default function DealerWalletPage() {
   const [balance, setBalance] = useState(0);
   const [amount, setAmount] = useState('');
   const [fundInfo, setFundInfo] = useState<Record<string, number> | null>(null);
+  const [fundError, setFundError] = useState('');
+  const [funding, setFunding] = useState(false);
 
   useEffect(() => {
     if (!loading && (!user || user.role !== 'dealer')) navigate('/login/dealer');
@@ -25,10 +28,16 @@ export default function DealerWalletPage() {
   useEffect(() => { if (user?.role === 'dealer') loadWallet(); }, [user]);
 
   const handleFund = async () => {
-    const res = await api.post('/dealer/wallet/fund', { amount: parseFloat(amount) });
-    setFundInfo(res.data.data);
-    if (res.data.data.authorizationUrl) {
-      window.location.href = res.data.data.authorizationUrl;
+    setFundError('');
+    setFunding(true);
+    try {
+      const res = await api.post('/dealer/wallet/fund', { amount: parseFloat(amount) });
+      setFundInfo(res.data.data);
+      redirectToPaystack(res.data.data.authorizationUrl);
+    } catch (err) {
+      setFundError(err instanceof Error ? err.message : 'Could not start Paystack payment');
+    } finally {
+      setFunding(false);
     }
   };
 
@@ -57,7 +66,10 @@ export default function DealerWalletPage() {
             <p className="font-bold">Total: {formatCurrency(fundInfo.total)}</p>
           </div>
         )}
-        <Button onClick={handleFund} className="w-full mt-4" disabled={!amount}>Proceed to Payment</Button>
+        {fundError && <p className="text-sm text-red-600 mt-3">{fundError}</p>}
+        <Button onClick={handleFund} className="w-full mt-4" disabled={!amount || funding}>
+          {funding ? 'Opening Paystack...' : 'Pay with Paystack (MoMo / Card)'}
+        </Button>
       </Card>
     </DashboardLayout>
   );

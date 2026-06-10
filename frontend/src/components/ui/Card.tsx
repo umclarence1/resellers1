@@ -25,82 +25,152 @@ export function CardBody({ children, className }: { children: ReactNode; classNa
   return <div className={cn('px-6 py-4', className)}>{children}</div>;
 }
 
-type StatColor = 'gold' | 'blue' | 'green' | 'orange' | 'purple' | 'red' | 'cyan' | 'pink';
+type StatColor =
+  | 'gold'
+  | 'blue'
+  | 'green'
+  | 'orange'
+  | 'purple'
+  | 'red'
+  | 'cyan'
+  | 'pink'
+  | 'slate'
+  | 'amber'
+  | 'emerald'
+  | 'sky'
+  | 'rose';
 
-const statStyles: Record<StatColor, { card: string; icon: string; glow: string; value: string }> = {
+const statStyles: Record<
+  StatColor,
+  { card: string; iconBox: string; icon: string; subtitle: string }
+> = {
+  slate: {
+    card: 'border-slate-600/40 bg-gradient-to-br from-slate-800/80 via-navy-card/90 to-navy-card',
+    iconBox: 'bg-slate-500/20 border border-slate-500/25',
+    icon: 'text-slate-300',
+    subtitle: 'text-slate-400',
+  },
   gold: {
-    card: 'border-amber-500/25 bg-gradient-to-br from-amber-500/15 via-navy-card to-navy-card',
-    icon: 'bg-gradient-to-br from-amber-400 to-amber-600 text-navy shadow-lg shadow-amber-500/30',
-    glow: 'bg-amber-400/20',
-    value: 'text-amber-200',
+    card: 'border-amber-500/35 bg-gradient-to-br from-amber-950/50 via-navy-card/90 to-navy-card',
+    iconBox: 'bg-amber-500/20 border border-amber-500/30',
+    icon: 'text-amber-400',
+    subtitle: 'text-amber-400/90',
+  },
+  amber: {
+    card: 'border-amber-600/40 bg-gradient-to-br from-amber-950/60 via-[#1a1408]/90 to-navy-card',
+    iconBox: 'bg-amber-500/25 border border-amber-500/35',
+    icon: 'text-amber-400',
+    subtitle: 'text-amber-400',
   },
   blue: {
-    card: 'border-blue-500/25 bg-gradient-to-br from-blue-500/15 via-navy-card to-navy-card',
-    icon: 'bg-gradient-to-br from-blue-400 to-blue-600 text-white shadow-lg shadow-blue-500/30',
-    glow: 'bg-blue-400/20',
-    value: 'text-blue-200',
+    card: 'border-blue-500/35 bg-gradient-to-br from-blue-950/50 via-navy-card/90 to-navy-card',
+    iconBox: 'bg-blue-500/20 border border-blue-500/30',
+    icon: 'text-blue-400',
+    subtitle: 'text-blue-400/90',
+  },
+  sky: {
+    card: 'border-sky-500/35 bg-gradient-to-br from-sky-950/55 via-[#0c1520]/90 to-navy-card',
+    iconBox: 'bg-sky-500/25 border border-sky-500/35',
+    icon: 'text-sky-400',
+    subtitle: 'text-sky-400',
   },
   green: {
-    card: 'border-emerald-500/25 bg-gradient-to-br from-emerald-500/15 via-navy-card to-navy-card',
-    icon: 'bg-gradient-to-br from-emerald-400 to-emerald-600 text-white shadow-lg shadow-emerald-500/30',
-    glow: 'bg-emerald-400/20',
-    value: 'text-emerald-200',
+    card: 'border-emerald-500/35 bg-gradient-to-br from-emerald-950/50 via-navy-card/90 to-navy-card',
+    iconBox: 'bg-emerald-500/20 border border-emerald-500/30',
+    icon: 'text-emerald-400',
+    subtitle: 'text-emerald-400/90',
+  },
+  emerald: {
+    card: 'border-emerald-500/40 bg-gradient-to-br from-emerald-950/65 via-[#081510]/90 to-navy-card',
+    iconBox: 'bg-emerald-500/25 border border-emerald-500/35',
+    icon: 'text-emerald-400',
+    subtitle: 'text-emerald-400',
   },
   orange: {
-    card: 'border-orange-500/25 bg-gradient-to-br from-orange-500/15 via-navy-card to-navy-card',
-    icon: 'bg-gradient-to-br from-orange-400 to-orange-600 text-white shadow-lg shadow-orange-500/30',
-    glow: 'bg-orange-400/20',
-    value: 'text-orange-200',
+    card: 'border-orange-500/35 bg-gradient-to-br from-orange-950/50 via-navy-card/90 to-navy-card',
+    iconBox: 'bg-orange-500/20 border border-orange-500/30',
+    icon: 'text-orange-400',
+    subtitle: 'text-orange-400/90',
   },
   purple: {
-    card: 'border-purple-500/25 bg-gradient-to-br from-purple-500/15 via-navy-card to-navy-card',
-    icon: 'bg-gradient-to-br from-purple-400 to-purple-600 text-white shadow-lg shadow-purple-500/30',
-    glow: 'bg-purple-400/20',
-    value: 'text-purple-200',
+    card: 'border-purple-500/35 bg-gradient-to-br from-purple-950/50 via-navy-card/90 to-navy-card',
+    iconBox: 'bg-purple-500/20 border border-purple-500/30',
+    icon: 'text-purple-400',
+    subtitle: 'text-purple-400/90',
   },
   red: {
-    card: 'border-red-500/25 bg-gradient-to-br from-red-500/15 via-navy-card to-navy-card',
-    icon: 'bg-gradient-to-br from-red-400 to-red-600 text-white shadow-lg shadow-red-500/30',
-    glow: 'bg-red-400/20',
-    value: 'text-red-200',
+    card: 'border-red-500/35 bg-gradient-to-br from-red-950/55 via-navy-card/90 to-navy-card',
+    iconBox: 'bg-red-500/20 border border-red-500/30',
+    icon: 'text-red-400',
+    subtitle: 'text-red-400/90',
+  },
+  rose: {
+    card: 'border-rose-500/40 bg-gradient-to-br from-rose-950/60 via-[#180c10]/90 to-navy-card',
+    iconBox: 'bg-rose-500/25 border border-rose-500/35',
+    icon: 'text-rose-400',
+    subtitle: 'text-rose-400',
   },
   cyan: {
-    card: 'border-cyan-500/25 bg-gradient-to-br from-cyan-500/15 via-navy-card to-navy-card',
-    icon: 'bg-gradient-to-br from-cyan-400 to-cyan-600 text-navy shadow-lg shadow-cyan-500/30',
-    glow: 'bg-cyan-400/20',
-    value: 'text-cyan-200',
+    card: 'border-cyan-500/35 bg-gradient-to-br from-cyan-950/50 via-navy-card/90 to-navy-card',
+    iconBox: 'bg-cyan-500/20 border border-cyan-500/30',
+    icon: 'text-cyan-400',
+    subtitle: 'text-cyan-400/90',
   },
   pink: {
-    card: 'border-pink-500/25 bg-gradient-to-br from-pink-500/15 via-navy-card to-navy-card',
-    icon: 'bg-gradient-to-br from-pink-400 to-pink-600 text-white shadow-lg shadow-pink-500/30',
-    glow: 'bg-pink-400/20',
-    value: 'text-pink-200',
+    card: 'border-pink-500/35 bg-gradient-to-br from-pink-950/50 via-navy-card/90 to-navy-card',
+    iconBox: 'bg-pink-500/20 border border-pink-500/30',
+    icon: 'text-pink-400',
+    subtitle: 'text-pink-400/90',
   },
 };
 
 export function StatCard({
   title,
   value,
+  subtitle,
   icon,
-  color = 'gold',
+  color = 'slate',
+  className,
 }: {
   title: string;
   value: string | number;
+  subtitle?: string;
   icon?: ReactNode;
   color?: StatColor;
+  className?: string;
 }) {
   const style = statStyles[color];
 
   return (
-    <div className={cn('relative overflow-hidden rounded-xl border p-5 transition-transform hover:scale-[1.02]', style.card)}>
-      <div className={cn('absolute -top-6 -right-6 w-24 h-24 rounded-full blur-2xl', style.glow)} />
+    <div
+      className={cn(
+        'relative overflow-hidden rounded-2xl border p-5 min-h-[130px] flex flex-col justify-between',
+        'transition-all duration-200 hover:shadow-xl hover:shadow-black/20 hover:-translate-y-0.5',
+        style.card,
+        className
+      )}
+    >
+      <div className="absolute inset-0 bg-gradient-to-t from-black/10 to-transparent pointer-events-none" />
       <div className="relative flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-xs uppercase tracking-wide text-gray-400 font-medium">{title}</p>
-          <p className={cn('text-xl sm:text-2xl font-bold mt-2 truncate', style.value)}>{value}</p>
-        </div>
+        <p className="text-[11px] uppercase tracking-wider text-gray-400 font-semibold leading-snug pr-2">
+          {title}
+        </p>
         {icon && (
-          <div className={cn('p-3 rounded-xl shrink-0', style.icon)}>{icon}</div>
+          <div
+            className={cn(
+              'flex items-center justify-center w-10 h-10 rounded-xl shrink-0 [&_svg]:w-5 [&_svg]:h-5',
+              style.iconBox,
+              style.icon
+            )}
+          >
+            {icon}
+          </div>
+        )}
+      </div>
+      <div className="relative mt-3">
+        <p className="text-3xl sm:text-4xl font-bold text-white tracking-tight leading-none">{value}</p>
+        {subtitle && (
+          <p className={cn('text-sm font-medium mt-2', style.subtitle)}>{subtitle}</p>
         )}
       </div>
     </div>

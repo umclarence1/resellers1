@@ -48,3 +48,51 @@ export const verifyWebhookSignature = (payload: string, signature: string): bool
 export const calculatePaystackCharge = (amount: number, chargePercent: number): number => {
   return Math.round(amount * (chargePercent / 100) * 100) / 100;
 };
+
+/** Ghana MoMo provider codes for Paystack transfer recipients */
+export const MOBILE_MONEY_BANK_CODES: Record<string, string> = {
+  MTN: 'MTN',
+  Telecel: 'VOD',
+  AirtelTigo: 'TGL',
+};
+
+export const ghsToPesewas = (amount: number): number => Math.round(amount * 100);
+
+export const pesewasToGhs = (amount: number): number => amount / 100;
+
+export const createTransferRecipient = async (input: {
+  name: string;
+  accountNumber: string;
+  bankCode: string;
+}) => {
+  const { data } = await paystackApi.post('/transferrecipient', {
+    type: 'mobile_money',
+    name: input.name,
+    account_number: input.accountNumber,
+    bank_code: input.bankCode,
+    currency: 'GHS',
+  });
+  return data.data as { recipient_code: string };
+};
+
+export const initiateTransfer = async (input: {
+  amountInPesewas: number;
+  recipientCode: string;
+  reason: string;
+  reference: string;
+}) => {
+  const { data } = await paystackApi.post('/transfer', {
+    source: 'balance',
+    amount: input.amountInPesewas,
+    recipient: input.recipientCode,
+    reason: input.reason,
+    reference: input.reference,
+    currency: 'GHS',
+  });
+  return data.data as { transfer_code: string; status: string; reference: string };
+};
+
+export const verifyTransfer = async (reference: string) => {
+  const { data } = await paystackApi.get(`/transfer/verify/${reference}`);
+  return data.data;
+};

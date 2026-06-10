@@ -16,6 +16,8 @@ type WithdrawalRow = {
   accountName: string;
   status: string;
   adminNote?: string;
+  paystackTransferStatus?: string;
+  paystackTransferReference?: string;
   createdAt: string;
   userId?: { fullName?: string; email?: string };
 };
@@ -74,7 +76,9 @@ export default function AdminWithdrawalsPage() {
   return (
     <DashboardLayout role="admin">
       <h1 className="text-xl sm:text-2xl font-bold text-white mb-1">Withdrawals</h1>
-      <p className="text-sm text-gray-400 mb-6">Approve reseller payout requests. Funds come from the withdrawal pool.</p>
+      <p className="text-sm text-gray-400 mb-6">
+        Approve requests to debit the pool and send MoMo via Paystack. Use &quot;Mark paid&quot; if Paystack payout was manual.
+      </p>
 
       <Card className="p-5 mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div className="flex items-center gap-3">
@@ -133,6 +137,12 @@ export default function AdminWithdrawalsPage() {
                           <span className={`px-2 py-1 rounded-full text-xs font-medium capitalize ${STATUS_STYLES[w.status] || 'bg-gray-100 text-gray-600'}`}>
                             {w.status}
                           </span>
+                          {w.paystackTransferStatus && (
+                            <p className="text-xs text-gray-500 mt-1">Paystack: {w.paystackTransferStatus}</p>
+                          )}
+                          {w.adminNote && (
+                            <p className="text-xs text-gray-400 mt-0.5 max-w-[200px] truncate" title={w.adminNote}>{w.adminNote}</p>
+                          )}
                         </td>
                         <td className="px-4 py-3 text-gray-600">{new Date(w.createdAt).toLocaleString()}</td>
                         <td className="px-4 py-3">

@@ -151,6 +151,7 @@ router.post('/:slug/purchase/init', asyncHandler(async (req, res) => {
     customerEmail: email.toLowerCase().trim(),
     sellingPrice,
     processingFee,
+    expectedTotal: total,
     reference,
     storeSlug: req.params.slug,
   });

@@ -30,6 +30,8 @@ import { upload } from '../middleware/upload';
 import { validatePasswordStrength } from '../utils/password';
 import { notifyDealerWebhook } from '../services/dealerWebhookService';
 import { env } from '../config/env';
+import { initPoolDepositPayment } from '../services/paystackPaymentService';
+import { sendWithdrawalViaPaystack } from '../services/paystackPayoutService';
 
 const router = Router();
 router.use(authenticate, authorize('admin'));
@@ -58,6 +60,11 @@ router.get(
       ordersToday,
       ordersWeek,
       ordersMonth,
+      pendingOrders,
+      processingOrders,
+      deliveredOrders,
+      cancelledOrders,
+      failedOrders,
       revenueAgg,
       profitAgg,
       pendingComplaints,
@@ -70,6 +77,11 @@ router.get(
       Order.countDocuments({ createdAt: { $gte: startOfToday } }),
       Order.countDocuments({ createdAt: { $gte: startOfWeek } }),
       Order.countDocuments({ createdAt: { $gte: startOfMonth } }),
+      Order.countDocuments({ status: 'pending' }),
+      Order.countDocuments({ status: 'processing' }),
+      Order.countDocuments({ status: 'delivered' }),
+      Order.countDocuments({ status: 'cancelled' }),
+      Order.countDocuments({ status: 'failed' }),
       Order.aggregate([{ $group: { _id: null, total: { $sum: '$totalAmount' } } }]),
       Order.aggregate([{ $group: { _id: null, total: { $sum: '$profit' } } }]),
       Complaint.countDocuments({ status: 'pending' }),
@@ -89,6 +101,11 @@ router.get(
         ordersToday,
         ordersThisWeek: ordersWeek,
         ordersThisMonth: ordersMonth,
+        pendingOrders,
+        processingOrders,
+        deliveredOrders,
+        cancelledOrders,
+        failedOrders,
         totalRevenue: revenueAgg[0]?.total || 0,
         totalProfit: profitAgg[0]?.total || 0,
         pendingComplaints,
@@ -378,6 +395,24 @@ router.patch('/withdrawals/:id', asyncHandler(async (req: AuthRequest, res) => {
   let withdrawal;
   if (status === 'approved') {
     withdrawal = await approveWithdrawal(req.params.id as string);
+    try {
+      const payout = await sendWithdrawalViaPaystack(withdrawal);
+      withdrawal.paystackTransferCode = payout.transferCode;
+      withdrawal.paystackTransferReference = payout.transferReference;
+      withdrawal.paystackTransferStatus = payout.transferStatus;
+      withdrawal.adminNote = [
+        withdrawal.adminNote,
+        `Paystack transfer initiated (${payout.transferReference})`,
+      ].filter(Boolean).join(' | ');
+      await withdrawal.save();
+    } catch (payoutErr) {
+      const msg = payoutErr instanceof Error ? payoutErr.message : 'Paystack payout failed';
+      withdrawal.adminNote = [
+        withdrawal.adminNote,
+        `Paystack payout pending: ${msg}. Mark paid manually after MoMo transfer.`,
+      ].filter(Boolean).join(' | ');
+      await withdrawal.save();
+    }
     await createNotification(
       withdrawal.userId,
       'withdrawal_approved',
@@ -493,6 +528,26 @@ router.put('/settings', asyncHandler(async (req: AuthRequest, res) => {
   res.json({ success: true, data: settings });
 }));
 
+// Fund withdrawal pool via Paystack (card / MoMo)
+router.post('/settings/withdrawal-pool/fund', asyncHandler(async (req: AuthRequest, res) => {
+  const amount = parseWithdrawalAmount(req.body.amount);
+  const { note } = req.body;
+
+  const data = await initPoolDepositPayment(
+    req.user!.email,
+    req.user!._id.toString(),
+    amount,
+    note
+  );
+
+  res.json({
+    success: true,
+    message: 'Redirect to Paystack to fund the withdrawal pool',
+    data,
+  });
+}));
+
+// Manual pool deposit (bank transfer / cash already received)
 router.post('/settings/withdrawal-pool/deposit', asyncHandler(async (req: AuthRequest, res) => {
   const amount = parseWithdrawalAmount(req.body.amount);
   const { note } = req.body;
@@ -501,6 +556,7 @@ router.post('/settings/withdrawal-pool/deposit', asyncHandler(async (req: AuthRe
     amount: result.amount,
     note,
     balanceAfter: result.settings.withdrawalPoolBalance,
+    source: 'manual',
   });
   res.json({
     success: true,

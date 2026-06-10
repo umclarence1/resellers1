@@ -12,6 +12,9 @@ export interface IWithdrawal extends Document {
   status: WithdrawalStatus;
   adminNote?: string;
   fundsReserved: boolean;
+  paystackTransferCode?: string;
+  paystackTransferReference?: string;
+  paystackTransferStatus?: string;
   processedAt?: Date;
   createdAt: Date;
   updatedAt: Date;
@@ -31,6 +34,9 @@ const withdrawalSchema = new Schema<IWithdrawal>(
     },
     adminNote: String,
     fundsReserved: { type: Boolean, default: false },
+    paystackTransferCode: String,
+    paystackTransferReference: String,
+    paystackTransferStatus: String,
     processedAt: Date,
   },
   { timestamps: true }

@@ -6,7 +6,8 @@ import { Card } from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import { formatCurrency } from '@/lib/utils';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { redirectToPaystack } from '@/lib/paystack';
 import { Loader2, Wallet, Settings, RefreshCw } from 'lucide-react';
 
 type SettingsData = {
@@ -32,11 +33,14 @@ const defaultSettings: SettingsData = {
 export default function AdminSettingsPage() {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const poolFunded = searchParams.get('poolFunded') === '1';
   const [settings, setSettings] = useState<SettingsData>(defaultSettings);
   const [pageLoading, setPageLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [saving, setSaving] = useState(false);
   const [depositing, setDepositing] = useState(false);
+  const [paystackFunding, setPaystackFunding] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
@@ -95,7 +99,24 @@ export default function AdminSettingsPage() {
     }
   };
 
-  const addPoolFunds = async (e: React.FormEvent) => {
+  const fundPoolViaPaystack = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPaystackFunding(true);
+    setError('');
+    setMessage('');
+    try {
+      const res = await api.post('/admin/settings/withdrawal-pool/fund', {
+        amount: parseFloat(depositAmount),
+        note: depositNote || undefined,
+      });
+      redirectToPaystack(res.data.data.authorizationUrl);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to start Paystack payment');
+      setPaystackFunding(false);
+    }
+  };
+
+  const addPoolFundsManual = async (e: React.FormEvent) => {
     e.preventDefault();
     setDepositing(true);
     setError('');
@@ -105,7 +126,7 @@ export default function AdminSettingsPage() {
         amount: parseFloat(depositAmount),
         note: depositNote || undefined,
       });
-      setMessage(res.data.message || 'Funds added to withdrawal pool.');
+      setMessage(res.data.message || 'Funds recorded in withdrawal pool.');
       setDepositAmount('');
       setDepositNote('');
       load();
@@ -138,6 +159,11 @@ export default function AdminSettingsPage() {
         </div>
       )}
 
+      {poolFunded && (
+        <p className="text-sm text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 p-3 rounded-lg mb-4">
+          Withdrawal pool funded via Paystack. Balance updated.
+        </p>
+      )}
       {message && (
         <p className="text-sm text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 p-3 rounded-lg mb-4">{message}</p>
       )}
@@ -180,7 +206,7 @@ export default function AdminSettingsPage() {
               </div>
             </div>
 
-            <form noValidate onSubmit={addPoolFunds} className="space-y-4">
+            <form noValidate className="space-y-4">
               <Input
                 label="Amount to add (GHS)"
                 type="number"
@@ -196,8 +222,22 @@ export default function AdminSettingsPage() {
                 onChange={(e) => setDepositNote(e.target.value)}
                 placeholder="MoMo ref, bank transfer, etc."
               />
-              <Button type="submit" className="w-full" disabled={depositing || !depositAmount}>
-                {depositing ? 'Adding...' : 'Add money to withdrawal pool'}
+              <Button
+                type="button"
+                className="w-full"
+                disabled={paystackFunding || !depositAmount}
+                onClick={fundPoolViaPaystack}
+              >
+                {paystackFunding ? 'Opening Paystack...' : 'Fund pool via Paystack (MoMo / Card)'}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                disabled={depositing || !depositAmount}
+                onClick={addPoolFundsManual}
+              >
+                {depositing ? 'Recording...' : 'Record manual deposit (cash / bank already received)'}
               </Button>
             </form>
           </Card>

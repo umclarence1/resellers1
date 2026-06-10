@@ -9,7 +9,7 @@ import { getDateRanges } from '../utils/helpers';
 import { getOrCreateWallet } from '../services/walletService';
 import { createOrder, validateBulkOrders, processBulkOrders } from '../services/orderService';
 import { getSettings } from '../services/settingsService';
-import { initializePayment, calculatePaystackCharge } from '../utils/paystack';
+import { initWalletDepositPayment } from '../services/paystackPaymentService';
 import { env } from '../config/env';
 import { User } from '../models/User';
 import crypto from 'crypto';
@@ -61,33 +61,13 @@ router.post('/wallet/fund', asyncHandler(async (req: AuthRequest, res) => {
   const { amount } = req.body;
   if (!amount || amount < 1) throw new AppError('Minimum deposit is GHS 1');
 
-  const settings = await getSettings();
-  const charge = calculatePaystackCharge(amount, settings.paystackChargePercent);
-  const total = amount + charge;
-
-  const reference = `DEP-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
-  const payment = await initializePayment(
+  const data = await initWalletDepositPayment(
     req.user!.email,
-    Math.round(total * 100),
-    {
-      type: 'wallet_deposit',
-      userId: req.user!._id.toString(),
-      depositAmount: amount,
-      paystackCharge: charge,
-      reference,
-    }
+    req.user!._id.toString(),
+    Number(amount)
   );
 
-  res.json({
-    success: true,
-    data: {
-      authorizationUrl: payment.authorization_url,
-      reference: payment.reference,
-      depositAmount: amount,
-      paystackCharge: charge,
-      total,
-    },
-  });
+  res.json({ success: true, data });
 }));
 
 // Networks & packages

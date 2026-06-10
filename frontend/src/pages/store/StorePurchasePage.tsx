@@ -9,6 +9,7 @@ import { formatCurrency } from '@/lib/utils';
 import { useNavigate, useParams } from 'react-router-dom';
 import { StoreTab } from '@/components/store/StoreLayout';
 import { runValidators, v } from '@/lib/form-validation';
+import { redirectToPaystack } from '@/lib/paystack';
 
 export default function StorePurchasePage() {
   const params = useParams();
@@ -55,9 +56,7 @@ export default function StorePurchasePage() {
     setLoading(true);
     try {
       const res = await api.post(`/store/${slug}/purchase/init`, { packageId, recipientPhone: phone, email });
-      if (res.data.data.authorizationUrl) {
-        window.location.href = res.data.data.authorizationUrl;
-      }
+      redirectToPaystack(res.data.data.authorizationUrl);
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Payment failed');
     } finally {
