@@ -14,5 +14,5 @@ export function getApiHostname(): string {
     }
   }
   if (typeof window !== 'undefined') return window.location.hostname;
-  return 'resellers1-api.vercel.app';
+  return 'backend-snowy-eight-68.vercel.app';
 }

@@ -10,7 +10,7 @@ function Set-FrontendVercelEnv($Name, $Value) {
   Pop-Location
 }
 
-Set-FrontendVercelEnv 'VITE_API_URL' 'https://resellers1-api.vercel.app/api'
+Set-FrontendVercelEnv 'VITE_API_URL' 'https://backend-snowy-eight-68.vercel.app/api'
 Set-FrontendVercelEnv 'VITE_APP_URL' 'https://resellers1.vercel.app'
 
 Write-Host 'Done setting reseller frontend env vars.'
