@@ -795,7 +795,7 @@ router.get('/settings', asyncHandler(async (_req, res) => {
     success: true,
     data: {
       processingFeePercent: settings.processingFeePercent ?? 2,
-      paystackChargePercent: settings.paystackChargePercent ?? 1.5,
+      paystackChargePercent: settings.paystackChargePercent ?? 2,
       minWithdrawal: settings.minWithdrawal ?? 30,
       withdrawalPoolBalance: poolSummary.withdrawalPoolBalance ?? 0,
       totalPoolDeposits: poolSummary.totalPoolDeposits ?? 0,

@@ -43,7 +43,7 @@ export interface ISetting extends Document {
 const settingSchema = new Schema<ISetting>(
   {
     processingFeePercent: { type: Number, default: 2 },
-    paystackChargePercent: { type: Number, default: 1.5 },
+    paystackChargePercent: { type: Number, default: 2 },
     minWithdrawal: { type: Number, default: 30 },
     withdrawalPoolBalance: { type: Number, default: 0 },
     totalPoolDeposits: { type: Number, default: 0 },

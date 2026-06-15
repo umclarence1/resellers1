@@ -46,7 +46,7 @@ type SettingsData = {
 
 const defaultSettings: SettingsData = {
   processingFeePercent: 2,
-  paystackChargePercent: 1.5,
+  paystackChargePercent: 2,
   minWithdrawal: 30,
   withdrawalPoolBalance: 0,
   totalPoolDeposits: 0,
@@ -68,7 +68,7 @@ const defaultFulfillment: FulfillmentSettings = {
 function normalizeSettings(data: Partial<SettingsData>): SettingsData {
   return {
     processingFeePercent: Number(data.processingFeePercent) || 2,
-    paystackChargePercent: Number(data.paystackChargePercent) || 1.5,
+    paystackChargePercent: Number(data.paystackChargePercent) || 2,
     minWithdrawal: Number(data.minWithdrawal) || 30,
     withdrawalPoolBalance: Number(data.withdrawalPoolBalance) || 0,
     totalPoolDeposits: Number(data.totalPoolDeposits) || 0,
@@ -114,7 +114,7 @@ export default function AdminSettingsPage() {
 
   const [form, setForm] = useState({
     processingFeePercent: '2',
-    paystackChargePercent: '1.5',
+    paystackChargePercent: '2',
     minWithdrawal: '30',
   });
   const [depositAmount, setDepositAmount] = useState('');
@@ -620,7 +620,7 @@ export default function AdminSettingsPage() {
                 onChange={(e) => setForm((f) => ({ ...f, processingFeePercent: e.target.value }))}
               />
               <Input
-                label="Paystack charge (%)"
+                label="Paystack charge (%) — agent & reseller wallet top-ups"
                 type="number"
                 step="0.1"
                 value={form.paystackChargePercent}
