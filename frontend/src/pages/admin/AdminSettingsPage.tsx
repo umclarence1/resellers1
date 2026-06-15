@@ -583,7 +583,7 @@ export default function AdminSettingsPage() {
               />
               <AdminPasswordConfirm value={adminOtp} onChange={setAdminOtp} />
               <p className="text-xs text-gray-500 -mt-2">
-                This code confirms pool funding and platform settings changes on this page.
+                This code confirms withdrawal pool funding on this page.
               </p>
               <Button
                 type="button"
@@ -633,6 +633,7 @@ export default function AdminSettingsPage() {
                 value={form.minWithdrawal}
                 onChange={(e) => setForm((f) => ({ ...f, minWithdrawal: e.target.value }))}
               />
+              <AdminPasswordConfirm value={adminOtp} onChange={setAdminOtp} />
               <Button type="submit" disabled={saving}>
                 {saving ? 'Saving...' : 'Save settings'}
               </Button>
