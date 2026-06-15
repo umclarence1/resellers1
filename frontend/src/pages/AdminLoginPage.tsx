@@ -30,9 +30,10 @@ export default function AdminLoginPage() {
     setLoading(true);
     try {
       const result = await login(email, password, 'admin');
-      if (result.requiresOtp) {
+      if (result.requiresTotp || result.requiresOtp) {
         sessionStorage.setItem('otpEmail', result.email || email);
         sessionStorage.setItem('otpRole', 'admin');
+        sessionStorage.setItem('mfaMode', result.requiresTotp ? 'totp' : 'email');
         navigate('/verify-otp');
       } else {
         navigate(dashboardRouteForRole(result.user?.role || 'admin'));

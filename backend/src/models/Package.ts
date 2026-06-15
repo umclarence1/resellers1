@@ -6,7 +6,7 @@ export interface IPackage extends Document {
   network: Network;
   bundleSize: string;
   costPrice: number;
-  dealerPrice: number;
+  agentPrice: number;
   resellerBasePrice: number;
   maxSellingPrice: number;
   isEnabled: boolean;
@@ -24,7 +24,7 @@ const packageSchema = new Schema<IPackage>(
     },
     bundleSize: { type: String, required: true },
     costPrice: { type: Number, required: true, min: 0 },
-    dealerPrice: { type: Number, required: true, min: 0 },
+    agentPrice: { type: Number, required: true, min: 0 },
     resellerBasePrice: { type: Number, required: true, min: 0 },
     maxSellingPrice: { type: Number, required: true, min: 0 },
     isEnabled: { type: Boolean, default: true },

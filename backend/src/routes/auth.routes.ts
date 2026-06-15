@@ -4,48 +4,108 @@ import crypto from 'crypto';
 import { User } from '../models/User';
 import { PasswordReset } from '../models/PasswordReset';
 import { Wallet } from '../models/Wallet';
-import { AuthRequest } from '../middleware/auth';
+import { AuthRequest, authenticate } from '../middleware/auth';
 import { asyncHandler, AppError } from '../middleware/errorHandler';
-import { authLimiter, otpLimiter } from '../middleware/rateLimiter';
+import {
+  authLimiter,
+  loginLimiter,
+  otpLimiter,
+  registerLimiter,
+  totpLimiter,
+} from '../middleware/rateLimiter';
+import {
+  assertTotpCode,
+  enableTotpForUser,
+  generateTotpSecret,
+  getTotpUri,
+  roleRequiresMfa,
+  verifyTotpCode,
+} from '../services/totpService';
 import { createAndSendOtp, verifyOtp, incrementOtpAttempts } from '../utils/otp';
-import { signToken } from '../utils/jwt';
+import { signAccessToken } from '../utils/jwt';
 import { sendPasswordResetEmail } from '../utils/email';
 import { env } from '../config/env';
+import { logSecurityEvent } from '../services/securityAuditService';
+import {
+  createRefreshToken,
+  invalidateUserSessions,
+  refreshTokenCookieOptions,
+  revokeRefreshToken,
+  rotateRefreshToken,
+} from '../services/refreshTokenService';
 import {
   generateReferralCode,
   isValidGhanaPhone,
   slugify,
 } from '../utils/helpers';
+import { buildAuthUserProfile } from '../services/performanceService';
 import { validatePasswordStrength } from '../utils/password';
+import { activateResellerStore } from '../services/resellerOnboardingService';
 
 const router = Router();
 
-const sanitizeUser = (user: InstanceType<typeof User>) => ({
-  id: user._id,
-  fullName: user.fullName,
-  email: user.email,
-  phone: user.phone,
-  role: user.role,
-  status: user.status,
-  resellerStore: user.resellerStore,
-  dealerApi: user.dealerApi
-    ? { apiKey: user.dealerApi.apiKey, isActive: user.dealerApi.isActive }
-    : undefined,
-});
+const LOCKOUT_THRESHOLD = 5;
+const LOCKOUT_MINUTES = 15;
 
-const issueToken = (user: InstanceType<typeof User>) => {
-  const token = signToken({
+const issueAuthSession = async (user: InstanceType<typeof User>) => {
+  const token = signAccessToken({
     userId: user._id.toString(),
     email: user.email,
     role: user.role,
+    tokenVersion: user.tokenVersion ?? 0,
   });
-  return { token, user: sanitizeUser(user) };
+  const refreshToken = await createRefreshToken(user._id);
+  const profile = await buildAuthUserProfile({
+    _id: user._id,
+    fullName: user.fullName,
+    email: user.email,
+    phone: user.phone,
+    role: user.role,
+    status: user.status,
+    resellerStore: user.resellerStore,
+    agentApi: user.agentApi
+      ? { apiKey: user.agentApi.apiKey, isActive: user.agentApi.isActive }
+      : undefined,
+  });
+  return { token, refreshToken, user: profile };
+};
+
+const isLoginLocked = (user: InstanceType<typeof User>) =>
+  user.loginLockedUntil != null && user.loginLockedUntil > new Date();
+
+const recordFailedLogin = async (user: InstanceType<typeof User> | null, email: string, ip?: string) => {
+  if (!user) {
+    await logSecurityEvent({
+      action: 'login_failed',
+      entity: 'auth',
+      details: { email: email.toLowerCase(), reason: 'unknown_account' },
+      ip,
+      success: false,
+    });
+    return;
+  }
+
+  user.failedLoginAttempts = (user.failedLoginAttempts ?? 0) + 1;
+  if (user.failedLoginAttempts >= LOCKOUT_THRESHOLD) {
+    user.loginLockedUntil = new Date(Date.now() + LOCKOUT_MINUTES * 60 * 1000);
+    user.failedLoginAttempts = 0;
+  }
+  await user.save();
+
+  await logSecurityEvent({
+    userId: user._id,
+    action: 'login_failed',
+    entity: 'auth',
+    details: { email: user.email, attempts: user.failedLoginAttempts },
+    ip,
+    success: false,
+  });
 };
 
 // Reseller registration
 router.post(
   '/register/reseller',
-  authLimiter,
+  registerLimiter,
   asyncHandler(async (req, res) => {
     const { fullName, email, phone, password, confirmPassword } = req.body;
 
@@ -62,7 +122,14 @@ router.post(
     }
 
     const existing = await User.findOne({ email: email.toLowerCase() });
-    if (existing) throw new AppError('Email already registered');
+    if (existing) {
+      res.status(201).json({
+        success: true,
+        message: 'If registration succeeds, an OTP will be sent to your email.',
+        data: { email: email.toLowerCase(), requiresOtp: true },
+      });
+      return;
+    }
 
     const hashedPassword = await bcrypt.hash(password, 12);
     const slug = slugify(fullName) + '-' + Date.now().toString(36);
@@ -80,7 +147,7 @@ router.post(
         phone,
         whatsapp: phone,
         supportEmail: email.toLowerCase(),
-        isActive: false,
+        isActive: true,
         isVerified: false,
         referralCode: generateReferralCode(),
         customPrices: {},
@@ -91,9 +158,9 @@ router.post(
 
     if (env.devSkipOtp) {
       user.status = 'active';
-      if (user.resellerStore) user.resellerStore.isActive = true;
+      activateResellerStore(user);
       await user.save();
-      const result = issueToken(user);
+      const result = await issueAuthSession(user);
       res.status(201).json({
         success: true,
         message: 'Registration successful (dev mode)',
@@ -115,35 +182,49 @@ router.post(
 // Login step 1 - credentials
 router.post(
   '/login',
-  authLimiter,
+  loginLimiter,
   asyncHandler(async (req, res) => {
     const { email, password, role } = req.body;
     if (!email || !password) throw new AppError('Email and password required');
 
     const user = await User.findOne({ email: email.toLowerCase() });
-    if (!user) throw new AppError('Invalid credentials');
+    if (!user) {
+      await recordFailedLogin(null, email, req.ip);
+      throw new AppError('Invalid credentials');
+    }
+
+    if (isLoginLocked(user)) {
+      throw new AppError('Too many failed attempts. Try again later.');
+    }
 
     if (!role) throw new AppError('Login portal is required');
     if (user.role !== role) {
-      throw new AppError('Invalid credentials for this portal');
+      await recordFailedLogin(user, email, req.ip);
+      throw new AppError('Invalid credentials');
     }
 
     const valid = await bcrypt.compare(password, user.password);
-    if (!valid) throw new AppError('Invalid credentials');
+    if (!valid) {
+      await recordFailedLogin(user, email, req.ip);
+      throw new AppError('Invalid credentials');
+    }
 
     if (user.status === 'suspended') {
       throw new AppError('Your account has been suspended');
     }
+
+    user.failedLoginAttempts = 0;
+    user.loginLockedUntil = undefined;
+    await user.save();
 
     // Dev mode: skip OTP so dashboards can be built without email integration
     if (env.devSkipOtp) {
       user.lastLogin = new Date();
       if (user.status === 'pending' && user.role === 'reseller') {
         user.status = 'active';
-        if (user.resellerStore) user.resellerStore.isActive = true;
       }
       await user.save();
-      const result = issueToken(user);
+      const result = await issueAuthSession(user);
       res.json({
         success: true,
         message: 'Login successful (dev mode — OTP skipped)',
@@ -152,13 +233,57 @@ router.post(
       return;
     }
 
-    await createAndSendOtp(email);
+    const prefersTotp = user.totpEnabled === true;
+    if (!prefersTotp || roleRequiresMfa(user.role)) {
+      void createAndSendOtp(email);
+    }
 
     res.json({
       success: true,
-      message: 'OTP sent to your email',
-      data: { email: user.email, role: user.role, requiresOtp: true },
+      message: prefersTotp
+        ? 'Enter your authenticator code, or use the email OTP backup'
+        : 'OTP sent to your email',
+      data: {
+        email: user.email,
+        role: user.role,
+        requiresOtp: !prefersTotp,
+        requiresTotp: prefersTotp,
+        emailOtpBackup: true,
+        mfaRecommended: roleRequiresMfa(user.role) && !user.totpEnabled,
+      },
     });
+  })
+);
+
+router.post(
+  '/verify-totp',
+  totpLimiter,
+  asyncHandler(async (req, res) => {
+    const { email, totp } = req.body;
+    if (!email || !totp) throw new AppError('Email and authenticator code required');
+
+    const user = await User.findOne({ email: email.toLowerCase() }).select('+totpSecretEnc');
+    if (!user) throw new AppError('Invalid credentials', 401);
+
+    assertTotpCode(user, String(totp));
+
+    user.lastLogin = new Date();
+    if (user.role === 'reseller') {
+      activateResellerStore(user);
+    }
+    await user.save();
+
+    const result = await issueAuthSession(user);
+    await logSecurityEvent({
+      userId: user._id,
+      action: 'login_success',
+      entity: 'auth',
+      details: { method: 'totp' },
+      ip: req.ip,
+      success: true,
+    });
+    res.cookie('refreshToken', result.refreshToken, refreshTokenCookieOptions);
+    res.json({ success: true, message: 'Login successful', data: result });
   })
 );
 
@@ -180,14 +305,116 @@ router.post(
     if (!user) throw new AppError('User not found');
 
     user.lastLogin = new Date();
-    if (user.status === 'pending' && user.role === 'reseller') {
-      user.status = 'active';
-      if (user.resellerStore) user.resellerStore.isActive = true;
+    if (user.role === 'reseller') {
+      activateResellerStore(user);
     }
     await user.save();
 
-    const result = issueToken(user);
+    const result = await issueAuthSession(user);
+    await logSecurityEvent({
+      userId: user._id,
+      action: 'login_success',
+      entity: 'auth',
+      details: { method: 'email_otp' },
+      ip: req.ip,
+      success: true,
+    });
+    res.cookie('refreshToken', result.refreshToken, refreshTokenCookieOptions);
     res.json({ success: true, message: 'Login successful', data: result });
+  })
+);
+
+router.post(
+  '/totp/enroll',
+  authenticate,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    if (!roleRequiresMfa(req.user!.role) && req.user!.role !== 'admin') {
+      throw new AppError('TOTP is available for admin and agent accounts');
+    }
+
+    const user = await User.findById(req.user!._id).select('+totpSecretEnc');
+    if (!user) throw new AppError('User not found');
+
+    const secret = generateTotpSecret();
+    const uri = getTotpUri(user.email, secret);
+
+    res.json({
+      success: true,
+      data: {
+        otpauthUri: uri,
+        secret,
+        message: 'Scan with Google Authenticator, then confirm with /totp/activate',
+      },
+    });
+  })
+);
+
+router.post(
+  '/totp/activate',
+  authenticate,
+  totpLimiter,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const { secret, code } = req.body;
+    if (!secret || !code) throw new AppError('Secret and verification code required');
+    if (!verifyTotpCode(String(secret), String(code))) {
+      throw new AppError('Invalid authenticator code');
+    }
+
+    const user = await User.findById(req.user!._id);
+    if (!user) throw new AppError('User not found');
+
+    await enableTotpForUser(user, String(secret));
+    await logSecurityEvent({
+      userId: user._id,
+      action: 'totp_enabled',
+      entity: 'auth',
+      ip: req.ip,
+      success: true,
+    });
+
+    res.json({ success: true, message: 'Authenticator app enabled' });
+  })
+);
+
+router.post(
+  '/refresh',
+  authLimiter,
+  asyncHandler(async (req, res) => {
+    const raw =
+      (req.cookies?.refreshToken as string | undefined) ||
+      (typeof req.body?.refreshToken === 'string' ? req.body.refreshToken : undefined);
+
+    if (!raw) throw new AppError('Refresh token required', 401);
+
+    const tokens = await rotateRefreshToken(raw);
+    res.cookie('refreshToken', tokens.refreshToken, refreshTokenCookieOptions);
+    res.json({
+      success: true,
+      data: { token: tokens.accessToken, refreshToken: tokens.refreshToken },
+    });
+  })
+);
+
+router.post(
+  '/logout',
+  authenticate,
+  asyncHandler(async (req: AuthRequest, res) => {
+    const raw = req.cookies?.refreshToken as string | undefined;
+    if (raw) await revokeRefreshToken(raw);
+
+    if (req.user) {
+      await invalidateUserSessions(req.user);
+      await logSecurityEvent({
+        userId: req.user._id,
+        action: 'logout',
+        entity: 'auth',
+        ip: req.ip,
+        success: true,
+      });
+    }
+
+    res.clearCookie('refreshToken', { path: '/api/auth' });
+    res.json({ success: true, message: 'Logged out' });
   })
 );
 
@@ -200,10 +427,10 @@ router.post(
     if (!email) throw new AppError('Email required');
 
     const user = await User.findOne({ email: email.toLowerCase() });
-    if (!user) throw new AppError('User not found');
-
-    await createAndSendOtp(email);
-    res.json({ success: true, message: 'OTP resent successfully' });
+    if (user) {
+      await createAndSendOtp(email, { waitForEmail: true });
+    }
+    res.json({ success: true, message: 'If an account exists, a new OTP has been sent.' });
   })
 );
 
@@ -234,7 +461,9 @@ router.post(
       });
 
       const resetLink = `${env.frontendUrl}/reset-password?token=${token}`;
-      await sendPasswordResetEmail(email, resetLink);
+      void sendPasswordResetEmail(email, resetLink).catch((err) => {
+        console.error('[Password reset email failed]', email, err instanceof Error ? err.message : err);
+      });
     }
 
     res.json({
@@ -266,10 +495,18 @@ router.post(
     if (!user) throw new AppError('User not found');
 
     user.password = await bcrypt.hash(password, 12);
-    await user.save();
+    await invalidateUserSessions(user);
 
     reset.used = true;
     await reset.save();
+
+    await logSecurityEvent({
+      userId: user._id,
+      action: 'password_reset',
+      entity: 'auth',
+      ip: req.ip,
+      success: true,
+    });
 
     res.json({ success: true, message: 'Password reset successful' });
   })
@@ -278,18 +515,22 @@ router.post(
 // Get current user
 router.get(
   '/me',
+  authenticate,
   asyncHandler(async (req: AuthRequest, res: Response) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader?.startsWith('Bearer ')) throw new AppError('Authentication required', 401);
-
-    const { verifyToken } = await import('../utils/jwt');
-    const payload = verifyToken(authHeader.split(' ')[1]);
-    const user = await User.findById(payload.userId);
-    if (!user || user.status === 'suspended') {
-      throw new AppError('Account not found or suspended', 401);
-    }
-
-    res.json({ success: true, data: sanitizeUser(user) });
+    const user = req.user!;
+    const profile = await buildAuthUserProfile({
+      _id: user._id,
+      fullName: user.fullName,
+      email: user.email,
+      phone: user.phone,
+      role: user.role,
+      status: user.status,
+      resellerStore: user.resellerStore,
+      agentApi: user.agentApi
+        ? { apiKey: user.agentApi.apiKey, isActive: user.agentApi.isActive }
+        : undefined,
+    });
+    res.json({ success: true, data: profile });
   })
 );
 

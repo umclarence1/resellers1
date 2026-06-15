@@ -7,6 +7,14 @@ interface BrandLogoProps {
   className?: string;
 }
 
+export function BrandMark({ className }: { className?: string }) {
+  return (
+    <span className={className}>
+      topdeals<span className="text-gold">gh</span>
+    </span>
+  );
+}
+
 export default function BrandLogo({ to = '/', size = 'md', className }: BrandLogoProps) {
   const sizeClass = {
     sm: 'text-lg',
@@ -16,9 +24,7 @@ export default function BrandLogo({ to = '/', size = 'md', className }: BrandLog
 
   return (
     <Link to={to} className={cn('inline-flex items-center', className)}>
-      <span className={cn('font-bold text-white tracking-tight', sizeClass)}>
-        Data<span className="text-gold">Bundle</span>
-      </span>
+      <BrandMark className={cn('font-bold text-white tracking-tight', sizeClass)} />
     </Link>
   );
 }

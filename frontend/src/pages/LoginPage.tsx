@@ -29,11 +29,11 @@ export default function LoginPage() {
             </div>
           </Link>
 
-          <Link to="/login/dealer" className="block bg-navy-card border border-navy-border rounded-xl p-5 hover:border-gold/40 transition group">
+          <Link to="/login/agent" className="block bg-navy-card border border-navy-border rounded-xl p-5 hover:border-gold/40 transition group">
             <div className="flex items-center gap-4 min-w-0">
               <div className="p-3 bg-gold/10 text-gold rounded-lg group-hover:bg-gold/20 transition shrink-0"><Users className="w-6 h-6" /></div>
               <div className="min-w-0">
-                <h2 className="font-semibold text-white">Dealer Login</h2>
+                <h2 className="font-semibold text-white">Agent Login</h2>
                 <p className="text-sm text-gray-400">Admin-created accounts only</p>
               </div>
             </div>

@@ -24,5 +24,17 @@ const auditLogSchema = new Schema<IAuditLog>(
 
 auditLogSchema.index({ userId: 1, createdAt: -1 });
 auditLogSchema.index({ entity: 1, createdAt: -1 });
+auditLogSchema.index({ action: 1, createdAt: -1 });
+
+const IMMUTABLE_MSG = 'Audit logs are append-only and cannot be modified or deleted';
+
+function blockAuditMutation(this: mongoose.Query<unknown, unknown>) {
+  throw new Error(IMMUTABLE_MSG);
+}
+
+auditLogSchema.pre(
+  ['updateOne', 'updateMany', 'deleteOne', 'deleteMany', 'findOneAndUpdate', 'findOneAndDelete', 'replaceOne'],
+  blockAuditMutation
+);
 
 export const AuditLog = mongoose.model<IAuditLog>('AuditLog', auditLogSchema);

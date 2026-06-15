@@ -1,13 +1,33 @@
-import { Link } from 'react-router-dom';
 import BackHomeLink from '@/components/ui/BackHomeLink';
 
 interface StoreLoadStateProps {
-  slug: string;
   loading: boolean;
   error: string;
 }
 
-export default function StoreLoadState({ slug, loading, error }: StoreLoadStateProps) {
+function storeErrorCopy(error: string) {
+  const lower = error.toLowerCase();
+  if (lower.includes('unavailable') || lower.includes('disabled') || lower.includes('not open')) {
+    return {
+      title: 'Store unavailable',
+      message:
+        'This store is not open right now. Please check back later or contact the person who shared the link with you.',
+    };
+  }
+  if (lower.includes('not found')) {
+    return {
+      title: 'Store not found',
+      message:
+        'We could not find a store at this link. Please check the address or ask your reseller for the correct store link.',
+    };
+  }
+  return {
+    title: 'Unable to open store',
+    message: error || 'Something went wrong while loading this store. Please try again later.',
+  };
+}
+
+export default function StoreLoadState({ loading, error }: StoreLoadStateProps) {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-navy text-gray-400">
@@ -17,20 +37,13 @@ export default function StoreLoadState({ slug, loading, error }: StoreLoadStateP
   }
 
   if (error) {
+    const copy = storeErrorCopy(error);
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-navy px-4 text-center">
         <div className="max-w-md bg-white rounded-xl p-8 shadow-xl">
-          <h1 className="text-xl font-bold text-gray-900 mb-2">Store not found</h1>
-          <p className="text-gray-600 mb-2">
-            No active store exists at <span className="font-mono text-sm">/store/{slug}</span>.
-          </p>
-          <p className="text-sm text-gray-500 mb-6">
-            Check the store link from your reseller. Demo store:{' '}
-            <Link to="/store/fastdata-gh" className="text-amber-700 hover:underline font-medium">
-              /store/fastdata-gh
-            </Link>
-          </p>
-          <BackHomeLink />
+          <h1 className="text-xl font-bold text-gray-900 mb-3">{copy.title}</h1>
+          <p className="text-gray-600 mb-8 leading-relaxed">{copy.message}</p>
+          <BackHomeLink variant="onLight" />
         </div>
       </div>
     );

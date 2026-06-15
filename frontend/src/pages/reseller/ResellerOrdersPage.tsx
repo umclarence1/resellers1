@@ -1,12 +1,30 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { api } from '@/lib/api';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { Card } from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 import { cn } from '@/lib/utils';
+import {
+  PanelTable,
+  PanelTableHeader,
+  PanelTableScroll,
+  panelTableHeadClass,
+  panelTableTh,
+  panelTableRowClass,
+} from '@/components/ui/PanelTable';
 import { useNavigate } from 'react-router-dom';
-import { Loader2, RefreshCw, ShoppingCart } from 'lucide-react';
+import { Loader2, RefreshCw, ShoppingCart, LineChart } from 'lucide-react';
+import OrderStatusFilters from '@/components/orders/OrderStatusFilters';
+import OrderTrackingModal from '@/components/orders/OrderTrackingModal';
+import ScrollTable from '@/components/ui/ScrollTable';
+import { MobileDataCard, MobileDataCardList, MobileDataCardRow } from '@/components/ui/MobileDataCard';
+import {
+  OrderStatusFilter,
+  formatOrderStatusLabel,
+  matchesStatusFilter,
+  statusBadgeClass,
+} from '@/lib/order-status';
 
 interface OrderRow {
   _id: string;
@@ -16,19 +34,12 @@ interface OrderRow {
   network: string;
   bundleSize: string;
   status: string;
+  providerStatus?: string;
+  providerReference?: string;
   totalAmount: number;
   createdAt: string;
   updatedAt: string;
 }
-
-const STATUS_STYLES: Record<string, string> = {
-  delivered: 'bg-emerald-100 text-emerald-800 border-emerald-200',
-  processing: 'bg-sky-100 text-sky-800 border-sky-200',
-  pending: 'bg-amber-100 text-amber-800 border-amber-200',
-  failed: 'bg-red-100 text-red-800 border-red-200',
-  refunded: 'bg-violet-100 text-violet-800 border-violet-200',
-  cancelled: 'bg-gray-100 text-gray-700 border-gray-200',
-};
 
 const formatDate = (iso: string) =>
   new Date(iso).toLocaleString('en-GH', {
@@ -46,6 +57,8 @@ export default function ResellerOrdersPage() {
   const [pageLoading, setPageLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
+  const [statusFilter, setStatusFilter] = useState<OrderStatusFilter>('all');
+  const [trackOrderId, setTrackOrderId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!loading && (!user || user.role !== 'reseller')) navigate('/login/reseller');
@@ -77,6 +90,14 @@ export default function ResellerOrdersPage() {
     return () => clearInterval(interval);
   }, [user, loadOrders]);
 
+  const filteredOrders = useMemo(
+    () =>
+      orders.filter((order) =>
+        matchesStatusFilter(order.status, order.providerStatus, statusFilter)
+      ),
+    [orders, statusFilter]
+  );
+
   if (loading || !user) return null;
 
   return (
@@ -84,7 +105,9 @@ export default function ResellerOrdersPage() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
         <div>
           <h1 className="text-xl sm:text-2xl font-bold text-white mb-1">Store Orders</h1>
-          <p className="text-sm text-gray-400">Orders placed through your store link</p>
+          <p className="text-sm text-gray-400">
+            Delivery statuses sync from your fulfillment provider in real time
+          </p>
         </div>
         <Button
           variant="outline"
@@ -98,8 +121,12 @@ export default function ResellerOrdersPage() {
         </Button>
       </div>
 
+      <OrderStatusFilters value={statusFilter} onChange={setStatusFilter} />
+
       {error && (
-        <p className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 p-3 rounded-lg mb-4">{error}</p>
+        <p className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 p-3 rounded-lg mb-4">
+          {error}
+        </p>
       )}
 
       {pageLoading ? (
@@ -107,31 +134,74 @@ export default function ResellerOrdersPage() {
           <Loader2 className="w-5 h-5 animate-spin" />
           Loading orders...
         </div>
-      ) : orders.length === 0 ? (
+      ) : filteredOrders.length === 0 ? (
         <Card className="p-10 text-center">
           <ShoppingCart className="w-10 h-10 text-gray-300 mx-auto mb-3" />
-          <p className="text-gray-900 font-medium">No orders yet</p>
+          <p className="text-gray-900 font-medium">No orders found</p>
           <p className="text-sm text-gray-500 mt-2">
-            When customers buy data from your store link, their orders will appear here.
+            {statusFilter === 'all'
+              ? 'When customers buy data from your store link, their orders will appear here.'
+              : 'Try another status filter.'}
           </p>
         </Card>
       ) : (
-        <Card className="overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm min-w-[720px]">
-              <thead className="bg-gray-50 border-b border-gray-100">
+        <PanelTable>
+          <PanelTableHeader
+            title="Order history"
+            subtitle={`${filteredOrders.length} store order${filteredOrders.length === 1 ? '' : 's'}`}
+          />
+          <MobileDataCardList>
+            {filteredOrders.map((order) => (
+              <MobileDataCard
+                key={order._id}
+                actions={
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setTrackOrderId(order.orderId)}
+                  >
+                    <LineChart className="w-4 h-4" />
+                    Track
+                  </Button>
+                }
+              >
+                <div className="flex items-start justify-between gap-2 mb-2">
+                  <p className="font-mono text-xs text-gray-900">{order.orderId}</p>
+                  <span
+                    className={cn(
+                      'inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold border capitalize shrink-0',
+                      statusBadgeClass(order.status, order.providerStatus)
+                    )}
+                  >
+                    {formatOrderStatusLabel(order.status, order.providerStatus)}
+                  </span>
+                </div>
+                <div className="space-y-1.5">
+                  <MobileDataCardRow label="Email" value={order.customerEmail || '—'} />
+                  <MobileDataCardRow label="Phone" value={order.recipientPhone} />
+                  <MobileDataCardRow label="Bundle" value={`${order.network} · ${order.bundleSize}`} />
+                  <MobileDataCardRow label="Date" value={formatDate(order.createdAt)} />
+                </div>
+              </MobileDataCard>
+            ))}
+          </MobileDataCardList>
+
+          <ScrollTable className="hidden md:block">
+            <PanelTableScroll minWidth={820}>
+              <thead className={panelTableHeadClass}>
                 <tr>
-                  <th className="text-left px-4 py-3 text-gray-500 font-medium">Order ID</th>
-                  <th className="text-left px-4 py-3 text-gray-500 font-medium">Email</th>
-                  <th className="text-left px-4 py-3 text-gray-500 font-medium">Phone</th>
-                  <th className="text-left px-4 py-3 text-gray-500 font-medium">Bundle</th>
-                  <th className="text-left px-4 py-3 text-gray-500 font-medium">Status</th>
-                  <th className="text-left px-4 py-3 text-gray-500 font-medium">Date</th>
+                  <th className={panelTableTh()}>Order ID</th>
+                  <th className={panelTableTh()}>Email</th>
+                  <th className={panelTableTh()}>Phone</th>
+                  <th className={panelTableTh()}>Bundle</th>
+                  <th className={panelTableTh()}>Status</th>
+                  <th className={panelTableTh()}>Date</th>
+                  <th className={panelTableTh()}>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {orders.map((order) => (
-                  <tr key={order._id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50/50">
+                {filteredOrders.map((order) => (
+                  <tr key={order._id} className={panelTableRowClass}>
                     <td className="px-4 py-3 font-mono text-xs text-gray-900">{order.orderId}</td>
                     <td className="px-4 py-3 text-gray-700 break-all">{order.customerEmail || '—'}</td>
                     <td className="px-4 py-3 text-gray-700">{order.recipientPhone}</td>
@@ -142,25 +212,37 @@ export default function ResellerOrdersPage() {
                       <span
                         className={cn(
                           'inline-flex px-2.5 py-1 rounded-full text-xs font-semibold border capitalize',
-                          STATUS_STYLES[order.status] || STATUS_STYLES.pending
+                          statusBadgeClass(order.status, order.providerStatus)
                         )}
                       >
-                        {order.status}
+                        {formatOrderStatusLabel(order.status, order.providerStatus)}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{formatDate(order.createdAt)}</td>
+                    <td className="px-4 py-3">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setTrackOrderId(order.orderId)}
+                        title="Track delivery"
+                      >
+                        <LineChart className="w-4 h-4" />
+                      </Button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
-            </table>
-          </div>
-        </Card>
+            </PanelTableScroll>
+          </ScrollTable>
+        </PanelTable>
       )}
 
-      {orders.length > 0 && (
-        <p className="text-xs text-gray-500 mt-4">
-          Status updates automatically every 30 seconds when admin changes an order.
-        </p>
+      {trackOrderId && (
+        <OrderTrackingModal
+          orderId={trackOrderId}
+          role="reseller"
+          onClose={() => setTrackOrderId(null)}
+        />
       )}
     </DashboardLayout>
   );

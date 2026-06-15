@@ -1,78 +1,117 @@
-import { Routes, Route } from 'react-router-dom';
-import HomePage from '@/pages/HomePage';
-import LoginPage from '@/pages/LoginPage';
-import ResellerLoginPage from '@/pages/ResellerLoginPage';
-import DealerLoginPage from '@/pages/DealerLoginPage';
-import AdminLoginPage from '@/pages/AdminLoginPage';
-import RegisterPage from '@/pages/RegisterPage';
-import VerifyOtpPage from '@/pages/VerifyOtpPage';
-import ForgotPasswordPage from '@/pages/ForgotPasswordPage';
-import ResetPasswordPage from '@/pages/ResetPasswordPage';
-import PaymentCallbackPage from '@/pages/PaymentCallbackPage';
-import AdminDashboard from '@/pages/admin/AdminDashboard';
-import AdminDealersPage from '@/pages/admin/AdminDealersPage';
-import AdminPackagesPage from '@/pages/admin/AdminPackagesPage';
-import DealerDashboard from '@/pages/dealer/DealerDashboard';
-import DealerPurchasePage from '@/pages/dealer/DealerPurchasePage';
-import DealerBulkPage from '@/pages/dealer/DealerBulkPage';
-import DealerWalletPage from '@/pages/dealer/DealerWalletPage';
-import DealerApiPage from '@/pages/dealer/DealerApiPage';
-import DealerOrdersPage from '@/pages/dealer/DealerOrdersPage';
-import ResellerDashboard from '@/pages/reseller/ResellerDashboard';
-import ResellerPricesPage from '@/pages/reseller/ResellerPricesPage';
-import ResellerStorePage from '@/pages/reseller/ResellerStorePage';
-import ResellerWithdrawalsPage from '@/pages/reseller/ResellerWithdrawalsPage';
-import ResellerOrdersPage from '@/pages/reseller/ResellerOrdersPage';
-import AdminOrdersPage from '@/pages/admin/AdminOrdersPage';
-import AdminComplaintsPage from '@/pages/admin/AdminComplaintsPage';
-import AdminResellersPage from '@/pages/admin/AdminResellersPage';
-import AdminWithdrawalsPage from '@/pages/admin/AdminWithdrawalsPage';
-import AdminSettingsPage from '@/pages/admin/AdminSettingsPage';
-import ResellerComplaintsPage from '@/pages/reseller/ResellerComplaintsPage';
-import StoreHomePage from '@/pages/store/StoreHomePage';
-import StorePurchasePage from '@/pages/store/StorePurchasePage';
-import VerifyPage from '@/pages/store/VerifyPage';
-import FloatingWidgets from '@/components/ui/FloatingWidgets';
+import { lazy, Suspense } from 'react';
+import { Routes, Route, Navigate } from 'react-router-dom';
+import HomeOrStorePage from '@/pages/HomeOrStorePage';
+import ProtectedRoute from '@/components/auth/ProtectedRoute';
+import RouteFallback from '@/components/ui/RouteFallback';
+
+const LoginPage = lazy(() => import('@/pages/LoginPage'));
+const ResellerLoginPage = lazy(() => import('@/pages/ResellerLoginPage'));
+const AgentLoginPage = lazy(() => import('@/pages/AgentLoginPage'));
+const AdminLoginPage = lazy(() => import('@/pages/AdminLoginPage'));
+const RegisterPage = lazy(() => import('@/pages/RegisterPage'));
+const VerifyOtpPage = lazy(() => import('@/pages/VerifyOtpPage'));
+const ForgotPasswordPage = lazy(() => import('@/pages/ForgotPasswordPage'));
+const ResetPasswordPage = lazy(() => import('@/pages/ResetPasswordPage'));
+const PaymentCallbackPage = lazy(() => import('@/pages/PaymentCallbackPage'));
+
+const AdminDashboard = lazy(() => import('@/pages/admin/AdminDashboard'));
+const AdminAgentsPage = lazy(() => import('@/pages/admin/AdminAgentsPage'));
+const AdminPackagesPage = lazy(() => import('@/pages/admin/AdminPackagesPage'));
+const AdminOrdersPage = lazy(() => import('@/pages/admin/AdminOrdersPage'));
+const AdminComplaintsPage = lazy(() => import('@/pages/admin/AdminComplaintsPage'));
+const AdminResellersPage = lazy(() => import('@/pages/admin/AdminResellersPage'));
+const AdminWithdrawalsPage = lazy(() => import('@/pages/admin/AdminWithdrawalsPage'));
+const AdminSettingsPage = lazy(() => import('@/pages/admin/AdminSettingsPage'));
+const AdminSearchPage = lazy(() => import('@/pages/admin/AdminSearchPage'));
+
+const AgentDashboard = lazy(() => import('@/pages/agent/AgentDashboard'));
+const AgentPurchasePage = lazy(() => import('@/pages/agent/AgentPurchasePage'));
+const AgentBulkPage = lazy(() => import('@/pages/agent/AgentBulkPage'));
+const AgentWalletPage = lazy(() => import('@/pages/agent/AgentWalletPage'));
+const AgentApiPage = lazy(() => import('@/pages/agent/AgentApiPage'));
+const AgentOrdersPage = lazy(() => import('@/pages/agent/AgentOrdersPage'));
+const AgentComplaintsPage = lazy(() => import('@/pages/agent/AgentComplaintsPage'));
+
+const ResellerDashboard = lazy(() => import('@/pages/reseller/ResellerDashboard'));
+const ResellerPricesPage = lazy(() => import('@/pages/reseller/ResellerPricesPage'));
+const ResellerStorePage = lazy(() => import('@/pages/reseller/ResellerStorePage'));
+const ResellerWithdrawalsPage = lazy(() => import('@/pages/reseller/ResellerWithdrawalsPage'));
+const ResellerOrdersPage = lazy(() => import('@/pages/reseller/ResellerOrdersPage'));
+const ResellerComplaintsPage = lazy(() => import('@/pages/reseller/ResellerComplaintsPage'));
+
+const StorePurchasePage = lazy(() => import('@/pages/store/StorePurchasePage'));
+const StoreHomeRedirect = lazy(() =>
+  import('@/pages/store/StoreSlugRedirect').then((m) => ({ default: m.StoreHomeRedirect }))
+);
+const StoreBuyRedirect = lazy(() =>
+  import('@/pages/store/StoreSlugRedirect').then((m) => ({ default: m.StoreBuyRedirect }))
+);
+const VerifyPage = lazy(() => import('@/pages/store/VerifyPage'));
+
+const FloatingWidgets = lazy(() => import('@/components/ui/FloatingWidgets'));
+const SupportAssistant = lazy(() => import('@/components/support/SupportAssistant'));
+const SessionTimeout = lazy(() => import('@/components/auth/SessionTimeout'));
+
+function Lazy({ children }: { children: React.ReactNode }) {
+  return <Suspense fallback={<RouteFallback />}>{children}</Suspense>;
+}
 
 export default function App() {
   return (
     <>
-    <Routes>
-      <Route path="/" element={<HomePage />} />
-      <Route path="/login" element={<LoginPage />} />
-      <Route path="/login/reseller" element={<ResellerLoginPage />} />
-      <Route path="/login/dealer" element={<DealerLoginPage />} />
-      <Route path="/login/admin" element={<AdminLoginPage />} />
-      <Route path="/register" element={<RegisterPage />} />
-      <Route path="/verify-otp" element={<VerifyOtpPage />} />
-      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-      <Route path="/reset-password" element={<ResetPasswordPage />} />
-      <Route path="/payment/callback" element={<PaymentCallbackPage />} />
-      <Route path="/admin" element={<AdminDashboard />} />
-      <Route path="/admin/dealers" element={<AdminDealersPage />} />
-      <Route path="/admin/packages" element={<AdminPackagesPage />} />
-      <Route path="/admin/orders" element={<AdminOrdersPage />} />
-      <Route path="/admin/complaints" element={<AdminComplaintsPage />} />
-      <Route path="/admin/resellers" element={<AdminResellersPage />} />
-      <Route path="/admin/withdrawals" element={<AdminWithdrawalsPage />} />
-      <Route path="/admin/settings" element={<AdminSettingsPage />} />
-      <Route path="/dealer" element={<DealerDashboard />} />
-      <Route path="/dealer/purchase" element={<DealerPurchasePage />} />
-      <Route path="/dealer/bulk" element={<DealerBulkPage />} />
-      <Route path="/dealer/wallet" element={<DealerWalletPage />} />
-      <Route path="/dealer/api" element={<DealerApiPage />} />
-      <Route path="/dealer/orders" element={<DealerOrdersPage />} />
-      <Route path="/reseller" element={<ResellerDashboard />} />
-      <Route path="/reseller/store" element={<ResellerStorePage />} />
-      <Route path="/reseller/prices" element={<ResellerPricesPage />} />
-      <Route path="/reseller/withdrawals" element={<ResellerWithdrawalsPage />} />
-      <Route path="/reseller/orders" element={<ResellerOrdersPage />} />
-      <Route path="/reseller/complaints" element={<ResellerComplaintsPage />} />
-      <Route path="/store/:slug" element={<StoreHomePage />} />
-      <Route path="/store/:slug/buy/:network" element={<StorePurchasePage />} />
-      <Route path="/store/:slug/verify" element={<VerifyPage />} />
-    </Routes>
-    <FloatingWidgets />
+      <Suspense fallback={null}>
+        <SessionTimeout />
+      </Suspense>
+      <Routes>
+        <Route path="/" element={<HomeOrStorePage />} />
+        <Route path="/buy/:network" element={<Lazy><StorePurchasePage mainDomain /></Lazy>} />
+        <Route path="/login" element={<Lazy><LoginPage /></Lazy>} />
+        <Route path="/login/reseller" element={<Lazy><ResellerLoginPage /></Lazy>} />
+        <Route path="/login/agent" element={<Lazy><AgentLoginPage /></Lazy>} />
+        <Route path="/login/dealer" element={<Navigate to="/login/agent" replace />} />
+        <Route path="/login/admin" element={<Lazy><AdminLoginPage /></Lazy>} />
+        <Route path="/register" element={<Lazy><RegisterPage /></Lazy>} />
+        <Route path="/verify-otp" element={<Lazy><VerifyOtpPage /></Lazy>} />
+        <Route path="/forgot-password" element={<Lazy><ForgotPasswordPage /></Lazy>} />
+        <Route path="/reset-password" element={<Lazy><ResetPasswordPage /></Lazy>} />
+        <Route path="/payment/callback" element={<Lazy><PaymentCallbackPage /></Lazy>} />
+
+        <Route path="/admin" element={<Lazy><ProtectedRoute role="admin"><AdminDashboard /></ProtectedRoute></Lazy>} />
+        <Route path="/admin/agents" element={<Lazy><ProtectedRoute role="admin"><AdminAgentsPage /></ProtectedRoute></Lazy>} />
+        <Route path="/admin/packages" element={<Lazy><ProtectedRoute role="admin"><AdminPackagesPage /></ProtectedRoute></Lazy>} />
+        <Route path="/admin/search" element={<Lazy><ProtectedRoute role="admin"><AdminSearchPage /></ProtectedRoute></Lazy>} />
+        <Route path="/admin/orders" element={<Lazy><ProtectedRoute role="admin"><AdminOrdersPage /></ProtectedRoute></Lazy>} />
+        <Route path="/admin/complaints" element={<Lazy><ProtectedRoute role="admin"><AdminComplaintsPage /></ProtectedRoute></Lazy>} />
+        <Route path="/admin/resellers" element={<Lazy><ProtectedRoute role="admin"><AdminResellersPage /></ProtectedRoute></Lazy>} />
+        <Route path="/admin/withdrawals" element={<Lazy><ProtectedRoute role="admin"><AdminWithdrawalsPage /></ProtectedRoute></Lazy>} />
+        <Route path="/admin/settings" element={<Lazy><ProtectedRoute role="admin"><AdminSettingsPage /></ProtectedRoute></Lazy>} />
+
+        <Route path="/agent" element={<Lazy><ProtectedRoute role="agent"><AgentDashboard /></ProtectedRoute></Lazy>} />
+        <Route path="/agent/purchase" element={<Lazy><ProtectedRoute role="agent"><AgentPurchasePage /></ProtectedRoute></Lazy>} />
+        <Route path="/agent/bulk" element={<Lazy><ProtectedRoute role="agent"><AgentBulkPage /></ProtectedRoute></Lazy>} />
+        <Route path="/agent/wallet" element={<Lazy><ProtectedRoute role="agent"><AgentWalletPage /></ProtectedRoute></Lazy>} />
+        <Route path="/agent/api" element={<Lazy><ProtectedRoute role="agent"><AgentApiPage /></ProtectedRoute></Lazy>} />
+        <Route path="/agent/orders" element={<Lazy><ProtectedRoute role="agent"><AgentOrdersPage /></ProtectedRoute></Lazy>} />
+        <Route path="/agent/complaints" element={<Lazy><ProtectedRoute role="agent"><AgentComplaintsPage /></ProtectedRoute></Lazy>} />
+        <Route path="/dealer" element={<Navigate to="/agent" replace />} />
+        <Route path="/dealer/*" element={<Navigate to="/agent" replace />} />
+        <Route path="/admin/dealers" element={<Navigate to="/admin/agents" replace />} />
+
+        <Route path="/reseller" element={<Lazy><ProtectedRoute role="reseller"><ResellerDashboard /></ProtectedRoute></Lazy>} />
+        <Route path="/reseller/store" element={<Lazy><ProtectedRoute role="reseller"><ResellerStorePage /></ProtectedRoute></Lazy>} />
+        <Route path="/reseller/prices" element={<Lazy><ProtectedRoute role="reseller"><ResellerPricesPage /></ProtectedRoute></Lazy>} />
+        <Route path="/reseller/withdrawals" element={<Lazy><ProtectedRoute role="reseller"><ResellerWithdrawalsPage /></ProtectedRoute></Lazy>} />
+        <Route path="/reseller/orders" element={<Lazy><ProtectedRoute role="reseller"><ResellerOrdersPage /></ProtectedRoute></Lazy>} />
+        <Route path="/reseller/complaints" element={<Lazy><ProtectedRoute role="reseller"><ResellerComplaintsPage /></ProtectedRoute></Lazy>} />
+
+        <Route path="/store/:slug" element={<Lazy><StoreHomeRedirect /></Lazy>} />
+        <Route path="/store/:slug/buy/:network" element={<Lazy><StoreBuyRedirect /></Lazy>} />
+        <Route path="/store/:slug/verify" element={<Lazy><VerifyPage /></Lazy>} />
+      </Routes>
+      <Suspense fallback={null}>
+        <FloatingWidgets />
+        <SupportAssistant />
+      </Suspense>
     </>
   );
 }

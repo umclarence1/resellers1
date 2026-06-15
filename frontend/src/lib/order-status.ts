@@ -1,0 +1,84 @@
+import { cn } from '@/lib/utils';
+
+export type OrderStatusFilter =
+  | 'all'
+  | 'pending'
+  | 'submitting'
+  | 'processing'
+  | 'delivered'
+  | 'failed'
+  | 'cancelled';
+
+export const ORDER_STATUS_FILTERS: { id: OrderStatusFilter; label: string }[] = [
+  { id: 'all', label: 'All' },
+  { id: 'pending', label: 'Pending' },
+  { id: 'submitting', label: 'Submitting to API' },
+  { id: 'processing', label: 'Processing' },
+  { id: 'delivered', label: 'Delivered' },
+  { id: 'failed', label: 'Failed' },
+  { id: 'cancelled', label: 'Cancelled' },
+];
+
+export const STATUS_STYLES: Record<string, string> = {
+  delivered: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+  processing: 'bg-sky-100 text-sky-800 border-sky-200',
+  pending: 'bg-amber-100 text-amber-800 border-amber-200',
+  failed: 'bg-red-100 text-red-800 border-red-200',
+  refunded: 'bg-violet-100 text-violet-800 border-violet-200',
+  cancelled: 'bg-gray-100 text-gray-700 border-gray-200',
+  submitting_to_api: 'bg-indigo-100 text-indigo-800 border-indigo-200',
+  gateway_processing: 'bg-cyan-100 text-cyan-800 border-cyan-200',
+  awaiting_provider_balance: 'bg-orange-100 text-orange-800 border-orange-200',
+};
+
+export function formatOrderStatusLabel(status: string, providerStatus?: string) {
+  if (providerStatus === 'submitting_to_api' || providerStatus === 'submitting') {
+    return 'Submitting to API';
+  }
+  if (providerStatus === 'gateway_processing') {
+    return 'Gateway Processing';
+  }
+  if (providerStatus === 'awaiting_provider_balance') {
+    return 'Awaiting Provider Balance';
+  }
+  return status.replace(/_/g, ' ');
+}
+
+export function statusBadgeClass(status: string, providerStatus?: string) {
+  if (providerStatus && STATUS_STYLES[providerStatus]) {
+    return STATUS_STYLES[providerStatus];
+  }
+  return STATUS_STYLES[status] || STATUS_STYLES.pending;
+}
+
+export function matchesStatusFilter(
+  status: string,
+  providerStatus: string | undefined,
+  filter: OrderStatusFilter
+) {
+  if (filter === 'all') return true;
+  if (filter === 'submitting') {
+    return (
+      providerStatus === 'submitting_to_api' ||
+      providerStatus === 'submitting' ||
+      providerStatus === 'awaiting_provider_balance'
+    );
+  }
+  if (filter === 'processing') {
+    return (
+      status === 'processing' &&
+      providerStatus !== 'submitting_to_api' &&
+      providerStatus !== 'awaiting_provider_balance'
+    );
+  }
+  return status === filter;
+}
+
+export function statusFilterButtonClass(active: boolean) {
+  return cn(
+    'px-3 py-1.5 rounded-lg text-xs font-semibold uppercase tracking-wide transition',
+    active
+      ? 'bg-sky-600 text-white shadow-sm'
+      : 'bg-navy-card text-gray-400 border border-navy-border hover:text-white hover:border-sky-500/40'
+  );
+}

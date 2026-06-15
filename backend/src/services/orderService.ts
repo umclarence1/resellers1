@@ -1,14 +1,20 @@
 import mongoose from 'mongoose';
 import { Package, Network } from '../models/Package';
-import { Order, OrderSource } from '../models/Order';
+import { Order, OrderSource, OrderStatus } from '../models/Order';
 import { Setting } from '../models/Setting';
 import { User } from '../models/User';
 import { AppError } from '../middleware/errorHandler';
-import { generateOrderId, isValidGhanaPhone, roundMoney } from '../utils/helpers';
-import { debitWallet, creditWallet } from './walletService';
-import { createNotification } from './notificationService';
-import { notifyDealerWebhook } from './dealerWebhookService';
+import { generateOrderId, generateOrderNumber, isValidGhanaPhone, roundMoney } from '../utils/helpers';
+import { toOrderCreationError } from '../utils/mongoErrors';
+import { debitWallet } from './walletService';
+import { applyOrderStatusUpdate, submitOrderToProvider } from './fulfillmentProviderService';
+import { snapshotPlatformProfitForOrder } from './platformProfitService';
+import { getAdminBasePrice, computeResellerOrderProfit } from './profitFormulas';
+import { assertNetworkInStock } from './networkStockService';
 import { env } from '../config/env';
+import { withMongoTransaction, sessionOpts } from '../utils/mongoTransaction';
+import { appendAuditLog } from './immutableAuditService';
+import { normalizeGhanaPhone } from '../utils/phone';
 
 const getSettings = async () => {
   let settings = await Setting.findOne();
@@ -47,13 +53,15 @@ export interface CreateOrderInput {
   packageId: string;
   recipientPhone: string;
   userId?: string;
-  dealerId?: string;
+  agentId?: string;
   resellerId?: string;
   customerEmail?: string;
   sellingPrice?: number;
   source: OrderSource;
   paystackReference?: string;
   processingFee?: number;
+  skipWalletDebit?: boolean;
+  walletReference?: string;
 }
 
 export const fulfillStorePurchase = async (
@@ -64,7 +72,7 @@ export const fulfillStorePurchase = async (
   const existing = await Order.findOne({ paystackReference: reference });
   if (existing) return existing;
 
-  const order = await createOrder({
+  return createOrder({
     packageId: String(metadata.packageId),
     recipientPhone: String(metadata.recipientPhone),
     resellerId: String(metadata.resellerId),
@@ -74,9 +82,6 @@ export const fulfillStorePurchase = async (
     source: 'reseller_store',
     paystackReference: reference,
   });
-  order.status = 'processing';
-  await order.save();
-  return order;
 };
 
 export const createOrder = async (input: CreateOrderInput) => {
@@ -85,28 +90,26 @@ export const createOrder = async (input: CreateOrderInput) => {
     throw new AppError('Package not found or disabled');
   }
 
-  if (!isValidGhanaPhone(input.recipientPhone)) {
+  const recipientPhone = normalizeGhanaPhone(input.recipientPhone);
+
+  if (!isValidGhanaPhone(recipientPhone)) {
     throw new AppError('Recipient number must be 10 digits starting with 0');
   }
 
+  await assertNetworkInStock(pkg.network);
+
   const settings = await getSettings();
-  let sellingPrice = input.sellingPrice ?? pkg.dealerPrice;
-  let costPrice = pkg.costPrice;
+  const apiCost = pkg.costPrice;
+  let sellingPrice = input.sellingPrice ?? pkg.agentPrice;
   let profit = 0;
 
-  if (input.source === 'dealer' || input.source === 'dealer_api') {
-    sellingPrice = pkg.dealerPrice;
-    costPrice = pkg.costPrice;
+  const needsWalletDebit =
+    (input.source === 'agent' || input.source === 'agent_api') &&
+    !!input.agentId &&
+    !input.skipWalletDebit;
 
-    if (input.dealerId) {
-      await debitWallet(
-        input.dealerId,
-        sellingPrice,
-        'purchase',
-        `Data purchase: ${pkg.network} ${pkg.bundleSize} to ${input.recipientPhone}`,
-        generateOrderId()
-      );
-    }
+  if (input.source === 'agent' || input.source === 'agent_api') {
+    sellingPrice = pkg.agentPrice;
   } else if (input.source === 'reseller_store') {
     const basePrice = pkg.resellerBasePrice;
     const customPrice = input.resellerId
@@ -116,8 +119,7 @@ export const createOrder = async (input: CreateOrderInput) => {
     sellingPrice = input.sellingPrice ?? customPrice;
     validateResellerPrice(sellingPrice, basePrice, pkg.maxSellingPrice);
 
-    costPrice = pkg.resellerBasePrice;
-    profit = roundMoney(sellingPrice - costPrice);
+    profit = computeResellerOrderProfit(sellingPrice, basePrice);
   }
 
   const processingFee =
@@ -125,63 +127,103 @@ export const createOrder = async (input: CreateOrderInput) => {
     roundMoney(sellingPrice * (settings.processingFeePercent / 100));
   const totalAmount = roundMoney(sellingPrice + processingFee);
 
-  const order = await Order.create({
-    orderId: generateOrderId(),
+  const adminBasePrice = getAdminBasePrice(input.source, {
+    resellerBasePrice: pkg.resellerBasePrice,
+    agentPrice: pkg.agentPrice,
+  });
+
+  const { paystackFee, platformProfit } = await snapshotPlatformProfitForOrder({
+    source: input.source,
+    basePrice: adminBasePrice,
+    apiCost,
+    totalAmount,
+  });
+
+  const orderNumber = generateOrderNumber();
+  const orderStatus: OrderStatus =
+    input.source === 'reseller_store' && input.paystackReference ? 'processing' : 'pending';
+
+  const orderPayload = {
+    orderId: orderNumber,
+    orderNumber,
     userId: input.userId,
-    dealerId: input.dealerId,
+    agentId: input.agentId,
     resellerId: input.resellerId,
     customerEmail: input.customerEmail,
     network: pkg.network,
     bundleSize: pkg.bundleSize,
     packageId: pkg._id,
-    recipientPhone: input.recipientPhone,
-    costPrice,
+    recipientPhone,
+    costPrice: apiCost,
+    adminBasePrice,
     sellingPrice,
     profit,
+    platformProfit,
+    paystackFee,
     processingFee,
     totalAmount,
-    status: input.source === 'reseller_store' && input.paystackReference ? 'processing' : 'pending',
+    status: orderStatus,
     source: input.source,
     paystackReference: input.paystackReference,
     complaintDeadline: new Date(Date.now() + 24 * 60 * 60 * 1000),
-  });
+  };
 
-  if (input.resellerId && profit > 0) {
-    await creditWallet(
-      input.resellerId,
-      profit,
-      'profit_credit',
-      `Profit from order ${order.orderId}`,
-      order.orderId
-    );
+  let order: InstanceType<typeof Order>;
+  try {
+    if (needsWalletDebit) {
+      const orderRef = input.walletReference ?? generateOrderId();
+      order = await withMongoTransaction(async (session) => {
+        await debitWallet(
+          input.agentId!,
+          sellingPrice,
+          'purchase',
+          `Data purchase: ${pkg.network} ${pkg.bundleSize} to ${recipientPhone}`,
+          orderRef,
+          { packageId: pkg._id.toString() },
+          session
+        );
+
+        const created = await Order.create([orderPayload], sessionOpts(session));
+        const doc = created[0];
+        await appendAuditLog({
+          userId: input.agentId,
+          action: 'purchase',
+          entity: 'order',
+          entityId: doc.orderId,
+          details: { amount: sellingPrice, source: input.source },
+        });
+        return doc;
+      });
+    } else {
+      order = await Order.create(orderPayload);
+      if (input.agentId || input.resellerId) {
+        await appendAuditLog({
+          userId: input.agentId || input.resellerId,
+          action: 'purchase',
+          entity: 'order',
+          entityId: order.orderId,
+          details: { amount: sellingPrice, source: input.source },
+        });
+      }
+    }
+  } catch (err) {
+    throw toOrderCreationError(err);
   }
 
-  // Simulate order processing (in production, integrate with telco API)
-  if (env.devAutoDeliver) {
+  if (env.fulfillment.enabled) {
+    await submitOrderToProvider(order);
+  } else if (env.devAutoDeliver) {
+  // Simulate order processing (local dev only)
     setTimeout(async () => {
       try {
         const updated = await Order.findById(order._id);
         if (updated && updated.status === 'processing') {
-          updated.status = 'delivered';
-          await updated.save();
-
-          if (updated.resellerId) {
-            await createNotification(
-              updated.resellerId,
-              'order_delivered',
-              'Order Delivered',
-              `Order ${updated.orderId} has been delivered successfully.`
-            );
-          }
-          if (updated.dealerId) {
-            await createNotification(
-              updated.dealerId,
-              'order_delivered',
-              'Order Delivered',
-              `Order ${updated.orderId} has been delivered successfully.`
-            );
-          }
-          await notifyDealerWebhook(updated);
+          await applyOrderStatusUpdate(updated, {
+            status: 'delivered',
+            providerStatus: 'delivered',
+            stepLabel: 'Bundle Dispatched',
+            stepMessage: 'Simulated delivery (dev)',
+          });
         }
       } catch (err) {
         console.error('Order processing error:', err);
@@ -200,9 +242,11 @@ export interface BulkOrderLine {
 export const validateBulkOrders = async (
   lines: BulkOrderLine[],
   network: string,
-  dealerId: string
+  agentId: string
 ) => {
-  const phones = new Set<string>();
+  await assertNetworkInStock(network);
+
+  const seenPhones = new Set<string>();
   const validated: Array<{
     phone: string;
     bundleSize: string;
@@ -213,13 +257,14 @@ export const validateBulkOrders = async (
   let totalCost = 0;
 
   for (const line of lines) {
-    if (!isValidGhanaPhone(line.phone)) {
+    const phone = normalizeGhanaPhone(line.phone);
+    if (!isValidGhanaPhone(phone)) {
       throw new AppError(`Invalid phone number: ${line.phone}`);
     }
-    if (phones.has(line.phone)) {
-      throw new AppError(`Duplicate phone number: ${line.phone}`);
+    if (seenPhones.has(phone)) {
+      throw new AppError(`Duplicate phone number: ${phone}`);
     }
-    phones.add(line.phone);
+    seenPhones.add(phone);
 
     const bundle = line.bundleSize.toUpperCase().endsWith('GB')
       ? line.bundleSize.toUpperCase()
@@ -231,16 +276,16 @@ export const validateBulkOrders = async (
     }
 
     validated.push({
-      phone: line.phone,
+      phone,
       bundleSize: bundle,
       packageId: pkg._id.toString(),
-      price: pkg.dealerPrice,
+      price: pkg.agentPrice,
       network: pkg.network,
     });
-    totalCost += pkg.dealerPrice;
+    totalCost += pkg.agentPrice;
   }
 
-  const wallet = await import('./walletService').then((m) => m.getOrCreateWallet(dealerId));
+  const wallet = await import('./walletService').then((m) => m.getOrCreateWallet(agentId));
   if (wallet.balance < totalCost) {
     throw new AppError('Insufficient wallet balance for bulk purchase');
   }
@@ -249,17 +294,41 @@ export const validateBulkOrders = async (
 };
 
 export const processBulkOrders = async (
-  validated: Array<{ phone: string; packageId: string }>,
-  dealerId: string,
-  source: OrderSource = 'dealer'
+  validated: Array<{ phone: string; packageId: string; price?: number }>,
+  agentId: string,
+  source: OrderSource = 'agent'
 ) => {
-  const orders = [];
+  const priced: Array<{ phone: string; packageId: string; price: number }> = [];
   for (const item of validated) {
+    const pkg = await Package.findById(item.packageId);
+    if (!pkg || !pkg.isEnabled) {
+      throw new AppError(`Package not found or disabled for ${item.phone}`);
+    }
+    priced.push({ phone: item.phone, packageId: item.packageId, price: pkg.agentPrice });
+  }
+
+  const totalCost = roundMoney(priced.reduce((sum, item) => sum + item.price, 0));
+  const bulkRef = `BULK-${generateOrderId()}`;
+
+  if (totalCost > 0) {
+    await debitWallet(
+      agentId,
+      totalCost,
+      'purchase',
+      `Bulk purchase (${priced.length} orders)`,
+      bulkRef
+    );
+  }
+
+  const orders = [];
+  for (const item of priced) {
     const order = await createOrder({
       packageId: item.packageId,
       recipientPhone: item.phone,
-      dealerId,
+      agentId,
       source,
+      skipWalletDebit: true,
+      walletReference: bulkRef,
     });
     orders.push(order);
   }

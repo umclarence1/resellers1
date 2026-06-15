@@ -7,7 +7,10 @@ import { Setting } from '../models/Setting';
 import { Wallet } from '../models/Wallet';
 import { env } from '../config/env';
 import { generateApiKey, generateReferralCode, generateSecretKey } from '../utils/helpers';
+import { setInitialAgentApiSecret, migrateAgentSecretIfNeeded } from './agentSecretService';
+import { migrateDealerToAgent } from './agentRoleMigrationService';
 import { reconcileLegacyPendingWithdrawals } from './withdrawalService';
+import { migrateOrderNumbers } from './orderMigrationService';
 
 const networks = ['MTN', 'Telecel', 'AirtelTigo'] as const;
 const bundles = ['1GB', '2GB', '3GB', '4GB', '5GB', '6GB', '8GB', '10GB', '15GB', '20GB', '25GB', '30GB', '40GB', '50GB'];
@@ -18,7 +21,41 @@ const bundlePrices: Record<string, number> = {
   '25GB': 92.0, '30GB': 108.0, '40GB': 140.0, '50GB': 175.0,
 };
 
+const mtnApiPrices: Record<string, number> = {
+  '1GB': 3.8, '2GB': 7.6, '3GB': 11.4, '4GB': 15.2, '5GB': 19.0,
+  '6GB': 22.8, '8GB': 31.0, '10GB': 37.5, '15GB': 56.0, '20GB': 75.0,
+  '25GB': 95.0, '30GB': 114.0, '40GB': 151.0, '50GB': 190.0,
+};
+
+function apiCostFor(network: string, bundle: string) {
+  if (network === 'MTN') return mtnApiPrices[bundle] ?? bundlePrices[bundle];
+  return bundlePrices[bundle];
+}
+
+async function migrateAgentApiSecrets(): Promise<void> {
+  const agents = await User.find({
+    role: 'agent',
+    'agentApi.secretKey': { $exists: true, $ne: null },
+    'agentApi.secretKeyHash': { $exists: false },
+  }).select('+agentApi.secretKey +agentApi.secretKeyHash');
+
+  let migrated = 0;
+  for (const agent of agents) {
+    try {
+      await migrateAgentSecretIfNeeded(agent);
+      migrated++;
+    } catch {
+      // leave for manual fix
+    }
+  }
+  if (migrated > 0) {
+    console.log(`Security: migrated ${migrated} agent API secret(s) to bcrypt hashes`);
+  }
+}
+
 export const seedDatabase = async (): Promise<void> => {
+  await migrateDealerToAgent();
+  await migrateAgentApiSecrets();
   await Package.deleteMany({ network: { $nin: networks } });
 
   const networkImageMap: Record<string, string> = {
@@ -74,15 +111,20 @@ export const seedDatabase = async (): Promise<void> => {
     }
   }
 
-  const dealerExists = await User.findOne({ role: 'dealer', email: env.demo.dealerEmail });
-  if (!dealerExists) {
-    await createDealerWithWallet({
-      fullName: 'Demo Dealer',
-      email: env.demo.dealerEmail,
+  const demoAgentEmail = env.demo.agentEmail.toLowerCase();
+  const existingDemoAgent = await User.findOne({ email: demoAgentEmail });
+  if (!existingDemoAgent) {
+    await createAgentWithWallet({
+      fullName: 'Demo Agent',
+      email: demoAgentEmail,
       phone: '0240000001',
-      password: env.demo.dealerPassword,
+      password: env.demo.agentPassword,
     });
-    console.log(`Demo dealer seeded: ${env.demo.dealerEmail}`);
+    console.log(`Demo agent seeded: ${demoAgentEmail}`);
+  } else if (existingDemoAgent.role !== 'agent') {
+    existingDemoAgent.role = 'agent';
+    await existingDemoAgent.save();
+    console.log(`Demo account upgraded to agent role: ${demoAgentEmail}`);
   }
 
   const resellerExists = await User.findOne({ role: 'reseller', email: env.demo.resellerEmail });
@@ -102,14 +144,15 @@ export const seedDatabase = async (): Promise<void> => {
 
   await ensureNetworkPackages();
   await reconcileLegacyPendingWithdrawals();
+  await migrateOrderNumbers();
 
   const faqCount = await Faq.countDocuments();
   if (faqCount === 0) {
     await Faq.insertMany([
       { question: 'How long does delivery take?', answer: 'Most orders are delivered within 1-5 minutes. During peak hours, delivery may take up to 30 minutes.', sortOrder: 1 },
-      { question: 'How do I fund my wallet?', answer: 'Dealers can fund their wallet via Paystack using Mobile Money or Bank Card from the dealer dashboard.', sortOrder: 2 },
+      { question: 'How do I fund my wallet?', answer: 'Agents can fund their wallet via Paystack using Mobile Money or Bank Card from the agent dashboard.', sortOrder: 2 },
       { question: 'How do I become a reseller?', answer: 'Click "Become A Reseller" on the homepage, complete registration, and set up your store profile.', sortOrder: 3 },
-      { question: 'Can I buy in bulk?', answer: 'Yes! Dealers can use the bulk purchase feature to buy data for multiple numbers at once.', sortOrder: 4 },
+      { question: 'Can I buy in bulk?', answer: 'Yes! Agents can use the bulk purchase feature to buy data for multiple numbers at once.', sortOrder: 4 },
     ]);
     console.log('FAQs seeded');
   }
@@ -139,14 +182,19 @@ export const ensureNetworkPackages = async () => {
   for (const network of networks) {
     for (const bundle of bundles) {
       const exists = await Package.findOne({ network, bundleSize: bundle });
-      if (exists) continue;
-
-      const base = bundlePrices[bundle];
+      const base = apiCostFor(network, bundle);
+      if (exists) {
+        if (network === 'MTN' && exists.costPrice !== base) {
+          exists.costPrice = base;
+          await exists.save();
+        }
+        continue;
+      }
       await Package.create({
         network,
         bundleSize: bundle,
         costPrice: base,
-        dealerPrice: round(base * 1.05),
+        agentPrice: round(base * 1.05),
         resellerBasePrice: round(base * 1.1),
         maxSellingPrice: round(base * 1.22),
         isEnabled: true,
@@ -159,27 +207,32 @@ export const ensureNetworkPackages = async () => {
   if (created > 0) console.log(`Packages seeded/updated: ${created} bundles for MTN, Telecel, AirtelTigo`);
 };
 
-export const createDealerWithWallet = async (data: {
+export const createAgentWithWallet = async (data: {
   fullName: string;
   email: string;
   phone: string;
   password: string;
 }) => {
   const hashedPassword = await bcrypt.hash(data.password, 12);
-  const dealer = await User.create({
+  const plaintextSecret = generateSecretKey();
+  const agentApi = {
+    apiKey: generateApiKey(),
+    ipWhitelist: [] as string[],
+    isActive: true,
+  };
+  await setInitialAgentApiSecret(agentApi, plaintextSecret);
+
+  const agent = await User.create({
     ...data,
     password: hashedPassword,
-    role: 'dealer',
+    role: 'agent',
     status: 'active',
-    dealerApi: {
-      apiKey: generateApiKey(),
-      secretKey: generateSecretKey(),
-      ipWhitelist: [],
-      isActive: true,
-    },
+    agentApi,
   });
-  await Wallet.create({ userId: dealer._id });
-  return dealer;
+  await Wallet.create({ userId: agent._id });
+  (agent as InstanceType<typeof User> & { _plaintextApiSecret?: string })._plaintextApiSecret =
+    plaintextSecret;
+  return agent;
 };
 
 export const createResellerWithStore = async (data: {

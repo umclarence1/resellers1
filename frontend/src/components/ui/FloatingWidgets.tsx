@@ -1,21 +1,15 @@
-import { useLocation } from 'react-router-dom';
+import { useLocation, useSearchParams } from 'react-router-dom';
 import SupportLine from '@/components/ui/SupportLine';
-import WhatsAppFloat from '@/components/ui/WhatsAppFloat';
+import { readStoreRef } from '@/lib/reseller-store-ref';
 
 export default function FloatingWidgets() {
   const { pathname } = useLocation();
-  const hideWidgets =
-    pathname.startsWith('/admin') ||
-    pathname.startsWith('/dealer') ||
-    pathname.startsWith('/reseller') ||
-    pathname.startsWith('/store/');
+  const [searchParams] = useSearchParams();
+  const storeSlug = readStoreRef(searchParams);
 
-  if (hideWidgets) return null;
+  const isHomeLanding = pathname === '/' && !storeSlug;
 
-  return (
-    <>
-      <SupportLine />
-      <WhatsAppFloat />
-    </>
-  );
+  if (!isHomeLanding) return null;
+
+  return <SupportLine />;
 }

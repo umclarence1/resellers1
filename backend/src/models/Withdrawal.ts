@@ -1,6 +1,6 @@
 import mongoose, { Document, Schema } from 'mongoose';
 
-export type WithdrawalStatus = 'pending' | 'approved' | 'paid' | 'rejected';
+export type WithdrawalStatus = 'pending' | 'approved' | 'processed' | 'paid' | 'rejected';
 export type MobileMoneyNetwork = 'MTN' | 'Telecel' | 'AirtelTigo';
 
 export interface IWithdrawal extends Document {
@@ -23,13 +23,13 @@ export interface IWithdrawal extends Document {
 const withdrawalSchema = new Schema<IWithdrawal>(
   {
     userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
-    amount: { type: Number, required: true, min: 30 },
+    amount: { type: Number, required: true, min: 1 },
     network: { type: String, enum: ['MTN', 'Telecel', 'AirtelTigo'], required: true },
     mobileNumber: { type: String, required: true },
     accountName: { type: String, required: true },
     status: {
       type: String,
-      enum: ['pending', 'approved', 'paid', 'rejected'],
+      enum: ['pending', 'approved', 'processed', 'paid', 'rejected'],
       default: 'pending',
     },
     adminNote: String,

@@ -1,58 +1,150 @@
 import axios from 'axios';
+import { touchSessionActivity } from './session';
+import {
+  clearAuthStorage,
+  getStoredToken,
+  getStoredRefreshToken,
+  migrateLegacyLocalStorageAuth,
+  setStoredRefreshToken,
+  setStoredToken,
+  setStoredUserJson,
+  getStoredUserJson,
+} from './secure-storage';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
+
+migrateLegacyLocalStorageAuth();
 
 export const api = axios.create({
   baseURL: API_URL,
   headers: { 'Content-Type': 'application/json' },
+  withCredentials: true,
+  timeout: 25_000,
 });
 
 api.interceptors.request.use((config) => {
-  if (typeof window !== 'undefined') {
-    const token = localStorage.getItem('token');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
+  const method = config.method?.toLowerCase();
+  if (method && ['post', 'put', 'patch'].includes(method) && config.data === undefined) {
+    config.data = {};
+  }
+  const token = getStoredToken();
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
   }
   return config;
 });
 
+let refreshPromise: Promise<string | null> | null = null;
+
+async function refreshAccessToken(): Promise<string | null> {
+  try {
+    const { data } = await axios.post(
+      `${API_URL}/auth/refresh`,
+      {},
+      { withCredentials: true }
+    );
+    const next = data.data?.token as string | undefined;
+    const nextRefresh = data.data?.refreshToken as string | undefined;
+    if (next) setStoredToken(next);
+    if (nextRefresh) setStoredRefreshToken(nextRefresh);
+    return next ?? null;
+  } catch {
+    const legacyRefresh = getStoredRefreshToken();
+    if (!legacyRefresh) return null;
+    try {
+      const { data } = await axios.post(
+        `${API_URL}/auth/refresh`,
+        { refreshToken: legacyRefresh },
+        { withCredentials: true }
+      );
+      const next = data.data?.token as string | undefined;
+      const nextRefresh = data.data?.refreshToken as string | undefined;
+      if (next) setStoredToken(next);
+      if (nextRefresh) setStoredRefreshToken(nextRefresh);
+      return next ?? null;
+    } catch {
+      return null;
+    }
+  }
+}
+
 api.interceptors.response.use(
-  (res) => res,
-  (error) => {
-    if (error.response?.status === 401 && typeof window !== 'undefined') {
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
+  (res) => {
+    if (getStoredToken()) touchSessionActivity();
+    return res;
+  },
+  async (error) => {
+    const original = error.config as
+      | { _retry?: boolean; headers?: Record<string, string>; url?: string }
+      | undefined;
+
+    if (error.response?.status === 401 && original && !original._retry) {
+      original._retry = true;
+      refreshPromise = refreshPromise ?? refreshAccessToken();
+      const token = await refreshPromise.finally(() => {
+        refreshPromise = null;
+      });
+      if (token && original.headers) {
+        original.headers.Authorization = `Bearer ${token}`;
+        return api(original);
+      }
+      clearAuthStorage();
+    } else if (error.response?.status === 401) {
+      clearAuthStorage();
     }
 
-    const message = error.response?.data?.message
-      || (error.code === 'ERR_NETWORK' ? 'Cannot reach server. Make sure the backend is running.' : null)
-      || error.message
-      || 'Something went wrong';
+    let message =
+      error.response?.data?.message ||
+      (error.code === 'ERR_NETWORK' || error.code === 'ECONNABORTED'
+        ? 'Cannot reach server. Check your internet connection and try again in a moment.'
+        : null) ||
+      error.message ||
+      'Something went wrong';
+
+    if (
+      error.response?.status === 403 &&
+      message === 'Access denied' &&
+      original?.url?.includes('/admin/')
+    ) {
+      message =
+        'Your session is not signed in as admin. Sign out, then log in again at /login/admin and retry.';
+    }
+
     return Promise.reject(new Error(message));
   }
 );
 
 export const setAuthToken = (token: string | null) => {
-  if (token) localStorage.setItem('token', token);
-  else localStorage.removeItem('token');
+  setStoredToken(token);
+};
+
+export const setRefreshToken = (token: string | null) => {
+  setStoredRefreshToken(token);
 };
 
 export const getStoredUser = () => {
-  if (typeof window === 'undefined') return null;
-  const user = localStorage.getItem('user');
+  const user = getStoredUserJson();
   return user ? JSON.parse(user) : null;
 };
 
 export const setStoredUser = (user: unknown | null) => {
-  if (user) localStorage.setItem('user', JSON.stringify(user));
-  else localStorage.removeItem('user');
+  setStoredUserJson(user ? JSON.stringify(user) : null);
 };
 
+export type OrderExportNetwork = 'all' | 'MTN' | 'Telecel' | 'AirtelTigo';
+
 /** Download admin CSV report (orders, withdrawals, etc.) */
-export async function downloadAdminReport(type: string, filename?: string) {
-  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-  const res = await fetch(`${API_URL}/admin/reports/${type}`, {
+export async function downloadAdminReport(
+  type: string,
+  options?: { network?: OrderExportNetwork; filename?: string }
+) {
+  const token = getStoredToken();
+  const params = new URLSearchParams();
+  if (options?.network && options.network !== 'all') {
+    params.set('network', options.network);
+  }
+  const query = params.toString();
+  const res = await fetch(`${API_URL}/admin/reports/${type}${query ? `?${query}` : ''}`, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   });
   if (!res.ok) {
@@ -63,7 +155,10 @@ export async function downloadAdminReport(type: string, filename?: string) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = filename || `${type}-report-${new Date().toISOString().slice(0, 10)}.csv`;
+  const dateStamp = new Date().toISOString().slice(0, 10);
+  const networkSuffix =
+    options?.network && options.network !== 'all' ? `-${options.network.toLowerCase()}` : '';
+  a.download = options?.filename || `${type}-report${networkSuffix}-${dateStamp}.csv`;
   document.body.appendChild(a);
   a.click();
   a.remove();

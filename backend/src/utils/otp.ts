@@ -1,17 +1,41 @@
+import crypto from 'crypto';
 import { Otp } from '../models/Otp';
 import { sendOtpEmail } from './email';
 
 export const generateOtpCode = (): string => {
-  return Math.floor(100000 + Math.random() * 900000).toString();
+  return crypto.randomInt(100000, 1000000).toString();
 };
 
-export const createAndSendOtp = async (email: string): Promise<void> => {
+type OtpSendOptions = {
+  /** Wait for SMTP/API delivery (use on resend so failures surface to the user). */
+  waitForEmail?: boolean;
+};
+
+/** Save OTP and dispatch email. */
+export const createAndSendOtp = async (
+  email: string,
+  options: OtpSendOptions = {}
+): Promise<void> => {
   const code = generateOtpCode();
   const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+  const normalized = email.toLowerCase();
 
-  await Otp.deleteMany({ email });
-  await Otp.create({ email, code, expiresAt });
-  await sendOtpEmail(email, code);
+  await Otp.findOneAndUpdate(
+    { email: normalized },
+    { $set: { code, expiresAt, attempts: 0 } },
+    { upsert: true }
+  );
+
+  const emailTask = sendOtpEmail(normalized, code);
+
+  if (options.waitForEmail) {
+    await emailTask;
+    return;
+  }
+
+  void emailTask.catch((err) => {
+    console.error('[OTP email failed]', normalized, err instanceof Error ? err.message : err);
+  });
 };
 
 export const verifyOtp = async (email: string, code: string): Promise<boolean> => {

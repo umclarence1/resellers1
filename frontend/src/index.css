@@ -37,9 +37,22 @@ body {
   padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
 }
 
+.safe-top {
+  padding-top: max(0.5rem, env(safe-area-inset-top));
+}
+
 .safe-x {
   padding-left: max(1rem, env(safe-area-inset-left));
   padding-right: max(1rem, env(safe-area-inset-right));
+}
+
+.table-mobile-hint {
+  margin-bottom: 0.5rem;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: rgb(156 163 175);
+  text-align: right;
 }
 
 @keyframes whatsapp-blink {

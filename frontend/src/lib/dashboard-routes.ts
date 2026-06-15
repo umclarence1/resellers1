@@ -1,7 +1,7 @@
 export const dashboardRouteForRole = (role?: string) => {
   const routes: Record<string, string> = {
     admin: '/admin',
-    dealer: '/dealer',
+    agent: '/agent',
     reseller: '/reseller',
   };
   return routes[role || ''] || '/';

@@ -1,10 +1,10 @@
 import { randomUUID } from 'crypto';
 
-export const generateOrderId = (): string => {
-  const timestamp = Date.now().toString(36).toUpperCase();
-  const random = Math.random().toString(36).substring(2, 6).toUpperCase();
-  return `ORD-${timestamp}-${random}`;
-};
+export const generateOrderNumber = (): string =>
+  `ORD-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+
+/** Public order identifier — same format as orderNumber for legacy DB compatibility. */
+export const generateOrderId = (): string => generateOrderNumber();
 
 export const generateReferralCode = (): string => {
   const num = Math.floor(10000 + Math.random() * 90000);

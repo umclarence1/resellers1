@@ -6,18 +6,35 @@ import Input from '@/components/ui/Input';
 import Select from '@/components/ui/Select';
 import { Card } from '@/components/ui/Card';
 import { formatCurrency } from '@/lib/utils';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { StoreTab } from '@/components/store/StoreLayout';
 import { runValidators, v } from '@/lib/form-validation';
 import { redirectToPaystack } from '@/lib/paystack';
+import {
+  buildStoreHomePath,
+  persistStoreRef,
+  readStoreRef,
+} from '@/lib/reseller-store-ref';
+import { PLATFORM_NAME } from '@/lib/brand';
 
-export default function StorePurchasePage() {
+export default function StorePurchasePage({ mainDomain = false }: { mainDomain?: boolean }) {
   const params = useParams();
   const navigate = useNavigate();
-  const slug = params.slug as string;
+  const [searchParams] = useSearchParams();
+  const slug =
+    (mainDomain ? readStoreRef(searchParams) : null) ||
+    (params.slug as string) ||
+    searchParams.get('r') ||
+    '';
   const network = decodeURIComponent(params.network as string);
 
   const handleTabChange = (tab: StoreTab) => {
+    if (mainDomain && slug) {
+      const next: Record<string, string> = { r: slug };
+      if (tab !== 'home') next.tab = tab;
+      navigate(buildStoreHomePath(slug, tab !== 'home' ? { tab } : undefined));
+      return;
+    }
     navigate(`/store/${slug}`, { state: { tab } });
   };
 
@@ -31,12 +48,14 @@ export default function StorePurchasePage() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    if (!slug) return;
+    if (mainDomain) persistStoreRef(slug);
     api.get(`/store/${slug}`).then((res) => setStore(res.data.data));
     api.get(`/store/${slug}/packages/${encodeURIComponent(network)}`).then((res) => {
       setPackages(res.data.data.packages);
       setPriceRange(res.data.data.priceRange);
     });
-  }, [slug, network]);
+  }, [slug, network, mainDomain]);
 
   const selected = packages.find((p) => p.id === packageId);
 
@@ -70,6 +89,10 @@ export default function StorePurchasePage() {
     if (fieldErrors.phone) setFieldErrors((prev) => ({ ...prev, phone: '' }));
   };
 
+  if (!slug) {
+    return <div className="min-h-screen flex items-center justify-center text-gray-500">Invalid store link</div>;
+  }
+
   if (!store) return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
 
   return (
@@ -77,10 +100,10 @@ export default function StorePurchasePage() {
       store={store as { storeName: string; slug: string; phone: string; whatsapp: string; supportEmail: string }}
       activeTab="services"
       onTabChange={handleTabChange}
+      brandName={mainDomain ? PLATFORM_NAME : undefined}
     >
       <div className="max-w-lg mx-auto px-4 sm:px-6 py-8 sm:py-10">
         <Card className="p-4 sm:p-6">
-          {/* Network header */}
           <div className="text-center mb-6">
             <h1 className="text-xl sm:text-2xl font-bold text-gray-900">{network}</h1>
             <p className="text-gray-500 mt-1">

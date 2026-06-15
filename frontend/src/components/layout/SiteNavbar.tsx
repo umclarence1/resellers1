@@ -45,10 +45,10 @@ export default function SiteNavbar() {
 
           <div className="hidden sm:flex items-center gap-2 sm:gap-3">
             <Link
-              to="/login/dealer"
+              to="/login/agent"
               className="text-sm font-medium text-gray-300 hover:text-white px-2 py-2 transition"
             >
-              Dealer Login
+              Agent Login
             </Link>
             <Link to="/login/reseller">
               <Button size="sm" variant="primary">Reseller Login</Button>
@@ -89,8 +89,8 @@ export default function SiteNavbar() {
                 </li>
               ))}
               <li className="border-t border-navy-border mt-2 pt-2 px-4 pb-4 space-y-2">
-                <Link to="/login/dealer" onClick={() => setMenuOpen(false)} className="block">
-                  <Button variant="outline" className="w-full">Dealer Login</Button>
+                <Link to="/login/agent" onClick={() => setMenuOpen(false)} className="block">
+                  <Button variant="outline" className="w-full">Agent Login</Button>
                 </Link>
                 <Link to="/login/reseller" onClick={() => setMenuOpen(false)} className="block">
                   <Button className="w-full">Reseller Login</Button>

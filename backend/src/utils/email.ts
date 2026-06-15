@@ -1,46 +1,202 @@
 import nodemailer from 'nodemailer';
 import { env } from '../config/env';
+import { PLATFORM_NAME } from '../config/brand';
 
+function smtpPort(): number {
+  if (process.env.SMTP_PORT) return env.smtp.port;
+  // Gmail STARTTLS (587) often times out on serverless hosts — SSL (465) is reliable.
+  if (env.smtp.host.includes('gmail')) return 465;
+  return env.smtp.port || 587;
+}
+
+const port = smtpPort();
 const transporter = nodemailer.createTransport({
   host: env.smtp.host,
-  port: env.smtp.port,
-  secure: false,
-  requireTLS: true,
+  port,
+  secure: port === 465,
+  requireTLS: port !== 465,
+  ...(process.env.VERCEL ? {} : { pool: true, maxConnections: 3 }),
+  connectionTimeout: 20_000,
+  greetingTimeout: 15_000,
+  socketTimeout: 25_000,
   auth: env.smtp.user ? { user: env.smtp.user, pass: env.smtp.pass } : undefined,
-});
+} as nodemailer.TransportOptions);
 
-export const sendEmail = async (to: string, subject: string, html: string): Promise<void> => {
+let warmPromise: Promise<void> | null = null;
+
+export function warmEmailTransport(): Promise<void> {
+  if (!env.smtp.user && !env.resendApiKey) return Promise.resolve();
+  if (!warmPromise) {
+    warmPromise = (async () => {
+      if (env.resendApiKey) return;
+      if (!env.smtp.user) return;
+      await transporter.verify();
+    })().catch((err) => {
+      warmPromise = null;
+      console.warn('[Email warm-up failed]', err instanceof Error ? err.message : err);
+    });
+  }
+  return warmPromise;
+}
+
+type MailPayload = { to: string; subject: string; text: string; html: string };
+
+function resendFromAddress(): string {
+  if (env.resendFrom) return env.resendFrom;
+  const from = env.smtp.from;
+  if (from && !from.includes('@gmail.com') && !from.includes('@googlemail.com')) {
+    return from;
+  }
+  return `${PLATFORM_NAME} <onboarding@resend.dev>`;
+}
+
+async function sendViaResend({ to, subject, text, html }: MailPayload): Promise<void> {
+  const apiKey = env.resendApiKey;
+  if (!apiKey) throw new Error('Resend not configured');
+
+  const res = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      from: resendFromAddress(),
+      to: [to],
+      subject,
+      text,
+      html,
+    }),
+  });
+
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Resend ${res.status}: ${body.slice(0, 200)}`);
+  }
+}
+
+async function sendViaSmtp({ to, subject, text, html }: MailPayload): Promise<void> {
   if (!env.smtp.user) {
     console.log(`[Email Dev] To: ${to} | Subject: ${subject}`);
-    console.log(html);
+    console.log(text);
     return;
   }
+
+  await warmEmailTransport();
 
   await transporter.sendMail({
     from: env.smtp.from,
     to,
     subject,
+    text,
     html,
+    priority: 'high',
+    headers: {
+      'X-Priority': '1',
+      Importance: 'high',
+    },
   });
+}
+
+async function dispatchPriorityEmail(payload: MailPayload): Promise<void> {
+  if (env.resendApiKey) {
+    await sendViaResend(payload);
+    return;
+  }
+  await sendViaSmtp(payload);
+}
+
+async function sendWithOtpRetry(label: string, to: string, send: () => Promise<void>): Promise<void> {
+  try {
+    await send();
+  } catch (firstErr) {
+    console.warn(`[${label} retry]`, to, firstErr instanceof Error ? firstErr.message : firstErr);
+    warmPromise = null;
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    await send();
+  }
+}
+
+export class EmailDeliveryError extends Error {
+  constructor(message = 'Could not send verification email. Please try again in a moment.') {
+    super(message);
+    this.name = 'EmailDeliveryError';
+  }
+}
+
+export const sendEmail = async (to: string, subject: string, html: string): Promise<void> => {
+  if (!env.smtp.user && !env.resendApiKey) {
+    console.log(`[Email Dev] To: ${to} | Subject: ${subject}`);
+    console.log(html);
+    return;
+  }
+
+  if (env.resendApiKey) {
+    await sendViaResend({ to, subject, text: subject, html });
+    return;
+  }
+
+  await transporter.sendMail({ from: env.smtp.from, to, subject, html });
 };
 
 export const sendOtpEmail = async (email: string, code: string): Promise<void> => {
+  const subject = `${code} is your ${PLATFORM_NAME} verification code`;
+  const text = [
+    `${PLATFORM_NAME} verification code`,
+    '',
+    code,
+    '',
+    'Enter this 6-digit code to complete sign-in. It expires in 10 minutes.',
+    'If you did not request this, ignore this email.',
+  ].join('\n');
+
   const html = `
-    <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
-      <div style="background: #0a1120; padding: 20px; border-radius: 12px 12px 0 0; text-align: center;">
-        <h2 style="color: #f5b800; margin: 0;">DataBundle</h2>
-      </div>
-      <div style="background: #f9fafb; padding: 24px; border-radius: 0 0 12px 12px; border: 1px solid #e5e7eb;">
-        <h3 style="color: #0a1120; margin-top: 0;">Your Login Verification Code</h3>
-        <p style="color: #4b5563;">Enter this 6-digit code to complete your login:</p>
-        <div style="font-size: 36px; font-weight: bold; letter-spacing: 12px; color: #0a1120; padding: 20px; background: #fff; border: 2px solid #f5b800; border-radius: 12px; text-align: center; margin: 20px 0;">
-          ${code}
-        </div>
-        <p style="color: #6b7280; font-size: 14px; margin-bottom: 0;">This code expires in 10 minutes. Do not share it with anyone.</p>
-      </div>
+    <div style="font-family:Arial,sans-serif;max-width:420px;margin:0 auto;padding:16px;">
+      <p style="margin:0 0 12px;color:#374151;font-size:15px;">Your ${PLATFORM_NAME} verification code:</p>
+      <p style="margin:0 0 16px;font-size:32px;font-weight:700;letter-spacing:8px;color:#0a1120;">${code}</p>
+      <p style="margin:0;color:#6b7280;font-size:13px;">Expires in 10 minutes. Do not share this code.</p>
     </div>
   `;
-  await sendEmail(email, 'Your Login OTP - DataBundle', html);
+
+  try {
+    await sendWithOtpRetry('OTP email', email, () =>
+      dispatchPriorityEmail({ to: email, subject, text, html })
+    );
+  } catch (err) {
+    console.error('[OTP email failed]', email, err instanceof Error ? err.message : err);
+    throw new EmailDeliveryError();
+  }
+};
+
+export const sendAdminActionOtpEmail = async (email: string, code: string): Promise<void> => {
+  const subject = `${code} — confirm your admin action`;
+  const text = [
+    `${PLATFORM_NAME} admin verification code`,
+    '',
+    code,
+    '',
+    'Enter this 6-digit code to confirm a sensitive admin action (withdrawals, pool funding, settings, etc.).',
+    'It expires in 10 minutes.',
+    'If you did not start this action, secure your account immediately.',
+  ].join('\n');
+
+  const html = `
+    <div style="font-family:Arial,sans-serif;max-width:420px;margin:0 auto;padding:16px;">
+      <p style="margin:0 0 8px;color:#374151;font-size:15px;">Confirm your admin action</p>
+      <p style="margin:0 0 12px;color:#6b7280;font-size:13px;">Enter this code in the admin dashboard to proceed:</p>
+      <p style="margin:0 0 16px;font-size:32px;font-weight:700;letter-spacing:8px;color:#0a1120;">${code}</p>
+      <p style="margin:0;color:#6b7280;font-size:13px;">Expires in 10 minutes. Do not share this code.</p>
+    </div>
+  `;
+
+  try {
+    await sendWithOtpRetry('Admin action OTP email', email, () =>
+      dispatchPriorityEmail({ to: email, subject, text, html })
+    );
+  } catch (err) {
+    console.error('[Admin action OTP email failed]', email, err instanceof Error ? err.message : err);
+    throw new EmailDeliveryError();
+  }
 };
 
 export const sendPasswordResetEmail = async (email: string, resetLink: string): Promise<void> => {
@@ -54,7 +210,7 @@ export const sendPasswordResetEmail = async (email: string, resetLink: string): 
       <p style="color: #6b7280;">If you didn't request this, ignore this email.</p>
     </div>
   `;
-  await sendEmail(email, 'Reset Your Password - DataBundle', html);
+  await sendEmail(email, `Reset Your Password - ${PLATFORM_NAME}`, html);
 };
 
 export const sendOrderHistoryOtpEmail = async (
@@ -62,35 +218,31 @@ export const sendOrderHistoryOtpEmail = async (
   code: string,
   storeName: string
 ): Promise<void> => {
-  const digits = code.split('');
-  const digitBoxes = digits
-    .map(
-      (d) =>
-        `<td style="width:44px;height:52px;text-align:center;font-size:24px;font-weight:700;color:#0a1120;background:#fff;border:2px solid #f5b800;border-radius:10px;">${d}</td>`
-    )
-    .join('<td style="width:8px;"></td>');
+  const subject = `${code} — verify order history (${storeName})`;
+  const text = [
+    `${storeName} order history verification`,
+    '',
+    code,
+    '',
+    'Enter this 6-digit code on the store page. It expires in 10 minutes.',
+  ].join('\n');
 
   const html = `
-    <div style="font-family: Inter, Arial, sans-serif; max-width: 520px; margin: 0 auto; background:#f3f4f6; padding:24px;">
-      <div style="background: linear-gradient(135deg, #0a1120 0%, #162035 100%); padding: 28px 24px; border-radius: 16px 16px 0 0; text-align: center;">
-        <p style="margin:0 0 8px;color:#9ca3af;font-size:12px;letter-spacing:2px;text-transform:uppercase;">Order History</p>
-        <h1 style="margin:0;color:#f5b800;font-size:24px;">${storeName}</h1>
-      </div>
-      <div style="background:#ffffff;padding:32px 24px;border-radius:0 0 16px 16px;border:1px solid #e5e7eb;border-top:none;">
-        <h2 style="margin:0 0 8px;color:#0a1120;font-size:20px;">Verify to view your orders</h2>
-        <p style="margin:0 0 24px;color:#6b7280;font-size:15px;line-height:1.6;">
-          Use this 6-digit code to securely check your lifetime order history — including delivered, pending, and processing orders.
-        </p>
-        <table role="presentation" cellspacing="0" cellpadding="0" style="margin:0 auto 24px;"><tr>${digitBoxes}</tr></table>
-        <div style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:12px;padding:14px 16px;margin-bottom:20px;">
-          <p style="margin:0;color:#047857;font-size:13px;"><strong>Tip:</strong> Enter all 6 digits on the store page — verification happens automatically.</p>
-        </div>
-        <p style="margin:0;color:#9ca3af;font-size:13px;">This code expires in <strong>10 minutes</strong>. Never share it with anyone.</p>
-      </div>
-      <p style="text-align:center;color:#9ca3af;font-size:12px;margin-top:16px;">&copy; DataBundle Ghana</p>
+    <div style="font-family:Arial,sans-serif;max-width:420px;margin:0 auto;padding:16px;">
+      <p style="margin:0 0 8px;color:#374151;font-size:14px;">${storeName} — order history code</p>
+      <p style="margin:0 0 16px;font-size:32px;font-weight:700;letter-spacing:8px;color:#0a1120;">${code}</p>
+      <p style="margin:0;color:#6b7280;font-size:13px;">Expires in 10 minutes. Do not share this code.</p>
     </div>
   `;
-  await sendEmail(email, `Your order history code — ${storeName}`, html);
+
+  try {
+    await sendWithOtpRetry('Order history OTP', email, () =>
+      dispatchPriorityEmail({ to: email, subject, text, html })
+    );
+  } catch (err) {
+    console.error('[Order history OTP email failed]', email, err instanceof Error ? err.message : err);
+    throw new EmailDeliveryError();
+  }
 };
 
 export const sendNotificationEmail = async (
@@ -104,5 +256,5 @@ export const sendNotificationEmail = async (
       <p>${message}</p>
     </div>
   `;
-  await sendEmail(email, `${title} - DataBundle`, html);
+  await sendEmail(email, `${title} - ${PLATFORM_NAME}`, html);
 };

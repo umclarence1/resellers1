@@ -1,11 +1,19 @@
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+import crypto from 'crypto';
 import { env } from '../config/env';
 
 const uploadDir = process.env.VERCEL
   ? path.join('/tmp', env.uploadDir)
   : path.join(process.cwd(), env.uploadDir);
+
+const MIME_TO_EXT: Record<string, string> = {
+  'image/jpeg': '.jpg',
+  'image/png': '.png',
+  'image/webp': '.webp',
+  'image/gif': '.gif',
+};
 
 function ensureUploadDir(): void {
   if (!fs.existsSync(uploadDir)) {
@@ -23,20 +31,20 @@ const storage = multer.diskStorage({
     }
   },
   filename: (_req, file, cb) => {
-    const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
-    cb(null, `${unique}${path.extname(file.originalname)}`);
+    const ext = MIME_TO_EXT[file.mimetype] || '.bin';
+    const unique = `${Date.now()}-${crypto.randomBytes(8).toString('hex')}`;
+    cb(null, `${unique}${ext}`);
   },
 });
 
 export const upload = multer({
   storage,
-  limits: { fileSize: env.maxFileSize },
+  limits: { fileSize: env.maxFileSize, files: 1 },
   fileFilter: (_req, file, cb) => {
-    const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
-    if (allowed.includes(file.mimetype)) {
+    if (MIME_TO_EXT[file.mimetype]) {
       cb(null, true);
     } else {
-      cb(new Error('Only image files are allowed'));
+      cb(new Error('Only JPEG, PNG, WebP, and GIF images are allowed'));
     }
   },
 });

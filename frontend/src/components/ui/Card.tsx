@@ -18,11 +18,11 @@ export function DarkCard({ children, className }: { children: ReactNode; classNa
 }
 
 export function CardHeader({ children, className }: { children: ReactNode; className?: string }) {
-  return <div className={cn('px-6 py-4 border-b border-gray-100', className)}>{children}</div>;
+  return <div className={cn('px-4 sm:px-6 py-4 border-b border-gray-100', className)}>{children}</div>;
 }
 
 export function CardBody({ children, className }: { children: ReactNode; className?: string }) {
-  return <div className={cn('px-6 py-4', className)}>{children}</div>;
+  return <div className={cn('px-4 sm:px-6 py-4', className)}>{children}</div>;
 }
 
 type StatColor =
@@ -144,7 +144,7 @@ export function StatCard({
   return (
     <div
       className={cn(
-        'relative overflow-hidden rounded-2xl border p-5 min-h-[130px] flex flex-col justify-between',
+        'relative overflow-hidden rounded-2xl border p-4 sm:p-5 min-h-[120px] sm:min-h-[130px] flex flex-col justify-between',
         'transition-all duration-200 hover:shadow-xl hover:shadow-black/20 hover:-translate-y-0.5',
         style.card,
         className
@@ -152,13 +152,13 @@ export function StatCard({
     >
       <div className="absolute inset-0 bg-gradient-to-t from-black/10 to-transparent pointer-events-none" />
       <div className="relative flex items-start justify-between gap-3">
-        <p className="text-[11px] uppercase tracking-wider text-gray-400 font-semibold leading-snug pr-2">
+        <p className="text-[10px] sm:text-[11px] uppercase tracking-wider text-gray-400 font-semibold leading-snug pr-2">
           {title}
         </p>
         {icon && (
           <div
             className={cn(
-              'flex items-center justify-center w-10 h-10 rounded-xl shrink-0 [&_svg]:w-5 [&_svg]:h-5',
+              'flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 rounded-xl shrink-0 [&_svg]:w-4 [&_svg]:h-4 sm:[&_svg]:w-5 sm:[&_svg]:h-5',
               style.iconBox,
               style.icon
             )}
@@ -168,9 +168,11 @@ export function StatCard({
         )}
       </div>
       <div className="relative mt-3">
-        <p className="text-3xl sm:text-4xl font-bold text-white tracking-tight leading-none">{value}</p>
+        <p className="text-2xl sm:text-3xl lg:text-4xl font-bold text-white tracking-tight leading-none tabular-nums break-words">
+          {value}
+        </p>
         {subtitle && (
-          <p className={cn('text-sm font-medium mt-2', style.subtitle)}>{subtitle}</p>
+          <p className={cn('text-xs sm:text-sm font-medium mt-2', style.subtitle)}>{subtitle}</p>
         )}
       </div>
     </div>

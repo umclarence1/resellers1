@@ -28,6 +28,24 @@ export const v = {
       if (!value.trim()) return null;
       return num >= min ? null : `${label} must be at least GHS ${min}`;
     },
+
+  maxAmount:
+    (max: number, label: string): Validator =>
+    (value) => {
+      const num = Number(value);
+      if (!value.trim()) return null;
+      return num <= max ? null : `${label} cannot exceed GHS ${max.toLocaleString()}`;
+    },
+
+  /** Reject values that look like Ghana phone numbers entered by mistake */
+  notPhoneNumber: (value: string) => {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    if (/^0\d{9}$/.test(trimmed)) {
+      return 'Enter an amount in GHS, not a phone number';
+    }
+    return null;
+  },
 };
 
 export function runValidators(

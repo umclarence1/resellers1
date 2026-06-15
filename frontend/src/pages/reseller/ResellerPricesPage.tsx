@@ -4,10 +4,22 @@ import { api } from '@/lib/api';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { Card } from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
-import { formatCurrency } from '@/lib/utils';
+import { formatCurrency, cn } from '@/lib/utils';
 import { Link, useNavigate } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { getNetworkImage } from '@/lib/network-images';
+import { computeResellerProfit } from '@/lib/reseller-profit';
+import NetworkStockBar, { NetworkStockRow } from '@/components/network/NetworkStockBar';
+import {
+  PanelTable,
+  PanelTableHeader,
+  PanelTableScroll,
+  PanelTableEmpty,
+  panelTableHeadClass,
+  panelTableTh,
+  panelTableRowClass,
+  panelTableCellClass,
+} from '@/components/ui/PanelTable';
 
 const NETWORK_ORDER = ['MTN', 'Telecel', 'AirtelTigo'] as const;
 
@@ -18,6 +30,8 @@ interface PackageRow {
   resellerBasePrice: number;
   maxSellingPrice: number;
   myPrice: number;
+  profitPerSale: number;
+  maxProfitPerSale: number;
 }
 
 export default function ResellerPricesPage() {
@@ -30,6 +44,13 @@ export default function ResellerPricesPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [sessionExpired, setSessionExpired] = useState(false);
+  const [pricingMeta, setPricingMeta] = useState<{
+    pricesReady: boolean;
+    networksMissing: string[];
+    configuredCount: number;
+    requiredCount: number;
+    networkStock?: NetworkStockRow[];
+  } | null>(null);
 
   useEffect(() => {
     if (!loading && (!user || user.role !== 'reseller')) navigate('/login/reseller');
@@ -42,6 +63,7 @@ export default function ResellerPricesPage() {
       .get('/reseller/prices')
       .then((res) => {
         setPackages(res.data.data);
+        if (res.data.meta) setPricingMeta(res.data.meta);
         setError('');
       })
       .catch((err) => {
@@ -81,16 +103,38 @@ export default function ResellerPricesPage() {
   }, {});
 
   const orderedNetworks = NETWORK_ORDER.filter((network) => grouped[network]?.length);
+  const networkStock = pricingMeta?.networkStock ?? [];
+  const stockByNetwork = Object.fromEntries(networkStock.map((row) => [row.network, row.inStock]));
 
   return (
     <DashboardLayout role="reseller">
       <h1 className="text-xl sm:text-2xl font-bold text-white mb-2">Price Management</h1>
       <p className="text-sm text-gray-400 mb-6">
-        Set your selling prices for MTN, Telecel, and AirtelTigo bundles within the allowed range.
+        Set your selling price above the base price. Your profit per sale is{' '}
+        <span className="text-gold font-medium">your price − base price</span> — this amount is credited to your wallet when an order is delivered.
       </p>
+
+      {pricingMeta && !pricingMeta.pricesReady && (
+        <Card className="p-4 mb-4 border-amber-200 bg-amber-50">
+          <p className="text-sm font-medium text-gray-900">Set prices for every network to open your store</p>
+          <p className="text-sm text-gray-600 mt-1">
+            {pricingMeta.configuredCount} of {pricingMeta.requiredCount} networks done.
+            {pricingMeta.networksMissing.length > 0 && (
+              <> Still needed: {pricingMeta.networksMissing.join(', ')}.</>
+            )}
+          </p>
+        </Card>
+      )}
 
       {error && !sessionExpired && (
         <p className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 p-3 rounded-lg mb-4">{error}</p>
+      )}
+
+      {!sessionExpired && networkStock.length > 0 && (
+        <Card className="p-4 mb-4">
+          <h2 className="text-sm font-semibold text-gray-900 mb-3">Network stock</h2>
+          <NetworkStockBar stock={networkStock} readOnly />
+        </Card>
       )}
 
       {sessionExpired ? (
@@ -128,37 +172,42 @@ export default function ResellerPricesPage() {
           {orderedNetworks.map((network) => {
             const items = grouped[network];
             const imageUrl = getNetworkImage(network);
+            const inStock = stockByNetwork[network] ?? true;
             return (
-              <Card key={network} className="overflow-hidden">
-                <div className="px-5 py-3 bg-gray-50 border-b border-gray-100 flex items-center gap-3">
-                  {imageUrl ? (
-                    <img
-                      src={imageUrl}
-                      alt={network}
-                      className="w-9 h-9 rounded-full object-cover border border-gray-200"
-                    />
-                  ) : null}
-                  <h3 className="font-semibold text-gray-900">{network}</h3>
-                  <span className="text-xs text-gray-500 ml-auto">{items.length} bundles</span>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm min-w-[560px]">
-                    <thead className="bg-white border-b border-gray-100">
-                      <tr>
-                        <th className="text-left px-4 py-3 text-gray-500 font-medium">Bundle</th>
-                        <th className="text-left px-4 py-3 text-gray-500 font-medium">Base Price</th>
-                        <th className="text-left px-4 py-3 text-gray-500 font-medium">Max Price</th>
-                        <th className="text-left px-4 py-3 text-gray-500 font-medium">Your Price</th>
-                        <th className="text-left px-4 py-3 text-gray-500 font-medium">Action</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {items.map((p) => (
-                        <tr key={p._id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50/50">
-                          <td className="px-4 py-3 font-medium text-gray-900">{p.bundleSize}</td>
-                          <td className="px-4 py-3 text-gray-600">{formatCurrency(p.resellerBasePrice)}</td>
-                          <td className="px-4 py-3 text-gray-600">{formatCurrency(p.maxSellingPrice)}</td>
-                          <td className="px-4 py-3">
+              <PanelTable key={network}>
+                <PanelTableHeader
+                  title={network}
+                  imageUrl={imageUrl || undefined}
+                  trailing={
+                    inStock
+                      ? `${items.length} bundles`
+                      : `${items.length} bundles · Out of stock`
+                  }
+                />
+                <PanelTableScroll minWidth={560}>
+                  <thead className={panelTableHeadClass}>
+                    <tr>
+                      <th className={panelTableTh()}>Bundle</th>
+                      <th className={panelTableTh()}>Min (Base)</th>
+                      <th className={panelTableTh()}>Max</th>
+                      <th className={panelTableTh()}>Your price</th>
+                      <th className={panelTableTh('emerald')}>Your profit</th>
+                      <th className={panelTableTh()}>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {items.map((p) => {
+                      const draftPrice = editing === p._id ? parseFloat(price) : p.myPrice;
+                      const liveProfit = Number.isFinite(draftPrice)
+                        ? computeResellerProfit(draftPrice, p.resellerBasePrice)
+                        : p.profitPerSale;
+                      const atBase = !editing && p.myPrice === p.resellerBasePrice;
+                      return (
+                        <tr key={p._id} className={panelTableRowClass}>
+                          <td className={cn(panelTableCellClass, 'font-medium text-gray-900')}>{p.bundleSize}</td>
+                          <td className={cn(panelTableCellClass, 'text-gray-600')}>{formatCurrency(p.resellerBasePrice)}</td>
+                          <td className={cn(panelTableCellClass, 'text-gray-600')}>{formatCurrency(p.maxSellingPrice)}</td>
+                          <td className={panelTableCellClass}>
                             {editing === p._id ? (
                               <input
                                 type="number"
@@ -170,11 +219,22 @@ export default function ResellerPricesPage() {
                                 className="w-24 px-2 py-1.5 border border-gray-200 rounded-lg text-gray-900 focus:ring-2 focus:ring-gold/50 focus:border-gold outline-none"
                               />
                             ) : (
-                              <span className="font-semibold text-emerald-700">{formatCurrency(p.myPrice)}</span>
+                              <>
+                                <span className="font-semibold text-emerald-700">{formatCurrency(p.myPrice)}</span>
+                                {atBase && (
+                                  <span className="block text-[10px] text-gray-400 font-normal">default base</span>
+                                )}
+                              </>
                             )}
                           </td>
-                          <td className="px-4 py-3">
-                            {editing === p._id ? (
+                          <td className={panelTableCellClass}>
+                            <span className="font-semibold text-emerald-700">{formatCurrency(liveProfit)}</span>
+                            <span className="block text-[10px] text-gray-400">max {formatCurrency(p.maxProfitPerSale)}</span>
+                          </td>
+                          <td className={panelTableCellClass}>
+                            {!inStock ? (
+                              <span className="text-xs text-amber-700 font-medium">Out of stock</span>
+                            ) : editing === p._id ? (
                               <div className="flex gap-2">
                                 <Button size="sm" loading={saving} onClick={() => savePrice(p._id)}>Save</Button>
                                 <Button size="sm" variant="outline" onClick={() => setEditing(null)}>Cancel</Button>
@@ -194,11 +254,11 @@ export default function ResellerPricesPage() {
                             )}
                           </td>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </Card>
+                      );
+                    })}
+                  </tbody>
+                </PanelTableScroll>
+              </PanelTable>
             );
           })}
         </div>

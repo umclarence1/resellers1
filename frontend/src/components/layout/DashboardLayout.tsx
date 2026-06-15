@@ -4,13 +4,18 @@ import { cn } from '@/lib/utils';
 import {
   LayoutDashboard, Users, Package, ShoppingCart, MessageSquare,
   Wallet, Settings, LogOut, Code, Menu, X, Store,
-  DollarSign, Bell, Phone,
+  DollarSign, Bell, Phone, Search,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import AdminSearchBar from '@/components/admin/AdminSearchBar';
+import { BrandMark } from '@/components/ui/BrandLogo';
+import ContactHelpButton from '@/components/ui/ContactHelpButton';
+import { ADMIN_SUPPORT_DISPLAY, ADMIN_SUPPORT_PHONE } from '@/lib/support-contact';
 
 const adminLinks = [
   { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/admin/dealers', label: 'Dealers', icon: Users },
+  { href: '/admin/search', label: 'Search', icon: Search },
+  { href: '/admin/agents', label: 'Agents', icon: Users },
   { href: '/admin/resellers', label: 'Resellers', icon: Store },
   { href: '/admin/packages', label: 'Packages', icon: Package },
   { href: '/admin/orders', label: 'Orders', icon: ShoppingCart },
@@ -19,13 +24,14 @@ const adminLinks = [
   { href: '/admin/settings', label: 'Settings', icon: Settings },
 ];
 
-const dealerLinks = [
-  { href: '/dealer', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/dealer/purchase', label: 'Buy Data', icon: ShoppingCart },
-  { href: '/dealer/bulk', label: 'Bulk Purchase', icon: Package },
-  { href: '/dealer/wallet', label: 'Wallet', icon: Wallet },
-  { href: '/dealer/orders', label: 'Orders', icon: ShoppingCart },
-  { href: '/dealer/api', label: 'Developer API', icon: Code },
+const agentLinks = [
+  { href: '/agent', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/agent/purchase', label: 'Buy Data', icon: ShoppingCart },
+  { href: '/agent/bulk', label: 'Bulk Purchase', icon: Package },
+  { href: '/agent/wallet', label: 'Wallet', icon: Wallet },
+  { href: '/agent/orders', label: 'Orders', icon: ShoppingCart },
+  { href: '/agent/complaints', label: 'Complaints', icon: MessageSquare },
+  { href: '/agent/api', label: 'Developer API', icon: Code },
 ];
 
 const resellerLinks = [
@@ -42,15 +48,17 @@ export default function DashboardLayout({
   role,
 }: {
   children: React.ReactNode;
-  role: 'admin' | 'dealer' | 'reseller';
+  role: 'admin' | 'agent' | 'reseller';
 }) {
   const { user, logout } = useAuth();
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  const links = role === 'admin' ? adminLinks : role === 'dealer' ? dealerLinks : resellerLinks;
-  const portalName = role === 'admin' ? 'Admin Portal' : role === 'dealer' ? 'Dealer Portal' : 'Reseller Portal';
+  const links = role === 'admin' ? adminLinks : role === 'agent' ? agentLinks : resellerLinks;
+  const portalName = role === 'admin' ? 'Admin Portal' : role === 'agent' ? 'Agent Portal' : 'Reseller Portal';
+  const displayName = user?.firstName || user?.fullName?.split(/\s+/)[0] || 'User';
+  const rankLabel = user?.performance?.rankLabel;
 
   useEffect(() => {
     if (!sidebarOpen) return;
@@ -60,11 +68,11 @@ export default function DashboardLayout({
     };
   }, [sidebarOpen]);
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
+    await logout();
     const loginRoutes: Record<string, string> = {
       admin: '/login/admin',
-      dealer: '/login/dealer',
+      agent: '/login/agent',
       reseller: '/login/reseller',
     };
     navigate(loginRoutes[role] || '/login');
@@ -81,7 +89,12 @@ export default function DashboardLayout({
         >
           <Menu className="w-6 h-6" />
         </button>
-        <span className="font-semibold text-gold text-sm sm:text-base truncate px-2">{portalName}</span>
+        <div className="min-w-0 px-2 text-center">
+          <span className="block font-semibold text-white text-sm truncate">{displayName}</span>
+          {rankLabel && (
+            <span className="block text-[10px] text-gold font-medium truncate">{rankLabel} this month</span>
+          )}
+        </div>
         <Bell className="w-5 h-5 text-gray-400 shrink-0" />
       </div>
 
@@ -95,10 +108,15 @@ export default function DashboardLayout({
         >
           <div className="flex items-center justify-between p-4 sm:p-5 border-b border-navy-border shrink-0">
             <div className="min-w-0">
-              <h1 className="text-lg font-bold text-white truncate">
-                Data<span className="text-gold">Bundle</span>
+              <p className="text-sm font-semibold text-white truncate">{displayName}</p>
+              {rankLabel ? (
+                <p className="text-xs text-gold font-medium truncate">{rankLabel} this month</p>
+              ) : (
+                <p className="text-xs text-gray-400 truncate">{portalName}</p>
+              )}
+              <h1 className="text-base font-bold text-white truncate mt-1">
+                <BrandMark />
               </h1>
-              <p className="text-xs text-gray-400 truncate">{portalName}</p>
             </div>
             <button
               type="button"
@@ -134,20 +152,26 @@ export default function DashboardLayout({
           </nav>
 
           <div className="shrink-0 p-3 sm:p-4 border-t border-navy-border safe-bottom">
-            <a
-              href="tel:+233595399837"
-              className="flex items-center gap-2.5 px-3 py-2.5 mb-2 rounded-lg bg-navy/60 border border-navy-border hover:border-gold/30 transition"
+            <ContactHelpButton
+              phone={ADMIN_SUPPORT_PHONE}
+              displayPhone={ADMIN_SUPPORT_DISPLAY}
+              smsBody="Hi topdealsgh, I need support."
+              whatsAppText="Hi topdealsgh, I need support."
+              className="flex items-center gap-2.5 px-3 py-2.5 mb-2 rounded-lg bg-navy/60 border border-navy-border hover:border-gold/30 transition w-full text-left"
             >
               <span className="flex items-center justify-center w-7 h-7 rounded-full bg-gold/15 text-gold shrink-0">
                 <Phone className="w-3.5 h-3.5" />
               </span>
               <span className="min-w-0">
                 <span className="block text-[10px] uppercase tracking-wide text-gray-500">Support</span>
-                <span className="block text-xs font-semibold text-white truncate">+233 59 539 9837</span>
+                <span className="block text-xs font-semibold text-white truncate">{ADMIN_SUPPORT_DISPLAY}</span>
               </span>
-            </a>
+            </ContactHelpButton>
             <div className="px-3 py-2 mb-2 min-w-0">
-              <p className="text-sm font-medium text-white truncate">{user?.fullName}</p>
+              <p className="text-sm font-medium text-white truncate">{displayName}</p>
+              {rankLabel && (
+                <p className="text-xs text-gold font-medium truncate">{rankLabel} performer</p>
+              )}
               <p className="text-xs text-gray-500 truncate">{user?.email}</p>
             </div>
             <button
@@ -170,7 +194,10 @@ export default function DashboardLayout({
           />
         )}
 
-        <main className="flex-1 min-w-0 w-full p-4 sm:p-6 lg:p-8 pb-6 text-white overflow-x-hidden">
+        <main className="flex-1 min-w-0 w-full p-4 sm:p-6 lg:p-8 pb-6 safe-x safe-bottom text-white overflow-x-hidden">
+          {role === 'admin' && !pathname.startsWith('/admin/search') && (
+            <AdminSearchBar className="mb-6 max-w-2xl" />
+          )}
           {children}
         </main>
       </div>

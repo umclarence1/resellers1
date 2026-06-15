@@ -1,6 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Phone, Menu, X } from 'lucide-react';
+import { Menu, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { BrandMark } from '@/components/ui/BrandLogo';
+import { PLATFORM_NAME } from '@/lib/brand';
+import StoreContactLinks from '@/components/store/StoreContactLinks';
+import ResellerWhatsAppFloat from '@/components/store/ResellerWhatsAppFloat';
 
 export type StoreTab = 'home' | 'services' | 'history' | 'faq' | 'contact';
 
@@ -25,12 +29,16 @@ export default function StoreLayout({
   activeTab,
   onTabChange,
   children,
+  brandName,
 }: {
   store: StoreData;
   activeTab: StoreTab;
   onTabChange: (tab: StoreTab) => void;
   children: React.ReactNode;
+  /** Platform branding on main domain; defaults to reseller store name. */
+  brandName?: string;
 }) {
+  const displayName = brandName || store.storeName;
   const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
@@ -55,7 +63,11 @@ export default function StoreLayout({
     <div className="min-h-screen bg-navy">
       <header className="relative bg-navy-light/95 backdrop-blur-md border-b border-navy-border sticky top-0 z-40 h-16">
         <div className="max-w-6xl mx-auto px-4 h-full flex items-center justify-between gap-3">
-          <span className="text-base sm:text-lg font-bold text-white truncate min-w-0">{store.storeName}</span>
+          {brandName === PLATFORM_NAME ? (
+            <BrandMark className="text-base sm:text-lg font-bold text-white truncate min-w-0" />
+          ) : (
+            <span className="text-base sm:text-lg font-bold text-white truncate min-w-0">{displayName}</span>
+          )}
 
           <button
             type="button"
@@ -104,19 +116,20 @@ export default function StoreLayout({
 
       <footer className="bg-navy-light border-t border-navy-border py-8 mt-12 safe-bottom">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 text-center sm:text-left">
-          <h3 className="text-white font-bold mb-2">{store.storeName}</h3>
-          <a
-            href={`tel:${store.phone}`}
-            className="inline-flex items-center gap-2 text-sm text-gray-400 hover:text-gold transition"
-          >
-            <Phone className="w-4 h-4 text-gold" />
-            Support: {store.phone}
-          </a>
+          <h3 className="text-white font-bold mb-2">{displayName}</h3>
+          <StoreContactLinks
+            phone={store.phone}
+            whatsapp={store.whatsapp}
+            storeName={store.storeName}
+            layout="footer"
+          />
           <p className="text-xs text-gray-500 mt-6 text-center sm:text-left">
-            &copy; {new Date().getFullYear()} {store.storeName}. All rights reserved.
+            &copy; {new Date().getFullYear()} {displayName}. All rights reserved.
           </p>
         </div>
       </footer>
+
+      <ResellerWhatsAppFloat whatsapp={store.whatsapp} storeName={store.storeName} />
     </div>
   );
 }

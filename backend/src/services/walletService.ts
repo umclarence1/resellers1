@@ -3,6 +3,8 @@ import { Wallet } from '../models/Wallet';
 import { WalletTransaction, TransactionType } from '../models/WalletTransaction';
 import { AppError } from '../middleware/errorHandler';
 import { roundMoney } from '../utils/helpers';
+import { isMongoDuplicateKeyError } from '../utils/mongoErrors';
+import { sessionOpts } from '../utils/mongoTransaction';
 
 export const getOrCreateWallet = async (userId: mongoose.Types.ObjectId | string) => {
   let wallet = await Wallet.findOne({ userId });
@@ -12,41 +14,123 @@ export const getOrCreateWallet = async (userId: mongoose.Types.ObjectId | string
   return wallet;
 };
 
+async function findIdempotentWalletTx(
+  userId: mongoose.Types.ObjectId | string,
+  reference: string | undefined,
+  type: TransactionType
+) {
+  if (!reference) return null;
+  const tx = await WalletTransaction.findOne({ userId, reference, type });
+  if (!tx || tx.description === '__reserved__' || tx.amount === 0) return null;
+  return tx;
+}
+
+/**
+ * Reserve an idempotency slot using the unique (userId, reference, type) index
+ * so concurrent webhook/purchase handlers cannot double-credit or double-debit.
+ */
+async function reserveWalletTxSlot(
+  userId: mongoose.Types.ObjectId | string,
+  reference: string,
+  type: TransactionType,
+  session?: mongoose.ClientSession | null
+): Promise<'reserved' | 'duplicate'> {
+  try {
+    await WalletTransaction.create([{
+      userId,
+      type,
+      amount: 0,
+      balanceBefore: 0,
+      balanceAfter: 0,
+      reference,
+      description: '__reserved__',
+      metadata: { reserved: true },
+    }], sessionOpts(session));
+    return 'reserved';
+  } catch (err) {
+    if (isMongoDuplicateKeyError(err)) return 'duplicate';
+    throw err;
+  }
+}
+
 export const creditWallet = async (
   userId: mongoose.Types.ObjectId | string,
   amount: number,
   type: TransactionType,
   description: string,
   reference?: string,
-  metadata?: Record<string, unknown>
+  metadata?: Record<string, unknown>,
+  session?: mongoose.ClientSession | null
 ) => {
-  const wallet = await getOrCreateWallet(userId);
   const roundedAmount = roundMoney(amount);
-  const balanceBefore = wallet.balance;
-  wallet.balance = roundMoney(wallet.balance + roundedAmount);
-
-  if (type === 'deposit') {
-    wallet.totalDeposits = roundMoney(wallet.totalDeposits + roundedAmount);
-  }
-  if (type === 'profit_credit') {
-    wallet.profitBalance = roundMoney(wallet.profitBalance + roundedAmount);
-  }
-  if (type === 'referral_credit') {
-    wallet.referralEarnings = roundMoney(wallet.referralEarnings + roundedAmount);
+  if (roundedAmount <= 0) {
+    throw new AppError('Credit amount must be positive');
   }
 
-  await wallet.save();
+  const duplicate = await findIdempotentWalletTx(userId, reference, type);
+  if (duplicate) {
+    const wallet = await Wallet.findOne({ userId });
+    if (!wallet) throw new AppError('Wallet not found');
+    return wallet;
+  }
 
-  await WalletTransaction.create({
-    userId,
-    type,
-    amount: roundedAmount,
-    balanceBefore,
-    balanceAfter: wallet.balance,
-    reference,
-    description,
-    metadata,
-  });
+  if (reference) {
+    const slot = await reserveWalletTxSlot(userId, reference, type, session);
+    if (slot === 'duplicate') {
+      const pending = await WalletTransaction.findOne({ userId, reference, type }).session(
+        session ?? null
+      );
+      if (!pending || pending.description !== '__reserved__') {
+        const wallet = await Wallet.findOne({ userId }).session(session ?? null);
+        if (!wallet) throw new AppError('Wallet not found');
+        return wallet;
+      }
+    }
+  }
+
+  await getOrCreateWallet(userId);
+
+  const inc: Record<string, number> = { balance: roundedAmount };
+  if (type === 'deposit') inc.totalDeposits = roundedAmount;
+  if (type === 'profit_credit') inc.profitBalance = roundedAmount;
+  if (type === 'referral_credit') inc.referralEarnings = roundedAmount;
+
+  const walletBefore = await Wallet.findOne({ userId }).session(session ?? null);
+  const balanceBefore = walletBefore?.balance ?? 0;
+
+  const wallet = await Wallet.findOneAndUpdate(
+    { userId },
+    { $inc: inc },
+    { new: true, ...sessionOpts(session) }
+  );
+  if (!wallet) throw new AppError('Wallet not found');
+
+  if (reference) {
+    await WalletTransaction.findOneAndUpdate(
+      { userId, reference, type },
+      {
+        $set: {
+          amount: roundedAmount,
+          balanceBefore,
+          balanceAfter: wallet.balance,
+          description,
+          metadata: metadata ?? {},
+        },
+      },
+      sessionOpts(session)
+    );
+  } else {
+    await WalletTransaction.create([{
+      userId,
+      type,
+      amount: roundedAmount,
+      balanceBefore,
+      balanceAfter: wallet.balance,
+      reference,
+      description,
+      metadata,
+    }], sessionOpts(session));
+  }
 
   return wallet;
 };
@@ -57,29 +141,86 @@ export const debitWallet = async (
   type: TransactionType,
   description: string,
   reference?: string,
-  metadata?: Record<string, unknown>
+  metadata?: Record<string, unknown>,
+  session?: mongoose.ClientSession | null
 ) => {
-  const wallet = await getOrCreateWallet(userId);
   const roundedAmount = roundMoney(amount);
+  if (roundedAmount <= 0) {
+    throw new AppError('Debit amount must be positive');
+  }
 
-  if (wallet.balance < roundedAmount) {
+  const duplicate = await findIdempotentWalletTx(userId, reference, type);
+  if (duplicate) {
+    const wallet = await Wallet.findOne({ userId });
+    if (!wallet) throw new AppError('Wallet not found');
+    return wallet;
+  }
+
+  if (reference) {
+    const slot = await reserveWalletTxSlot(userId, reference, type, session);
+    if (slot === 'duplicate') {
+      const pending = await WalletTransaction.findOne({ userId, reference, type }).session(
+        session ?? null
+      );
+      if (!pending || pending.description !== '__reserved__') {
+        const wallet = await Wallet.findOne({ userId }).session(session ?? null);
+        if (!wallet) throw new AppError('Wallet not found');
+        return wallet;
+      }
+    }
+  }
+
+  await getOrCreateWallet(userId);
+
+  const walletBefore = await Wallet.findOne({ userId }).session(session ?? null);
+  const balanceBefore = walletBefore?.balance ?? 0;
+
+  const wallet = await Wallet.findOneAndUpdate(
+    { userId, balance: { $gte: roundedAmount } },
+    { $inc: { balance: -roundedAmount } },
+    { new: true, ...sessionOpts(session) }
+  );
+
+  if (!wallet) {
+    if (reference) {
+      await WalletTransaction.deleteOne(
+        { userId, reference, type, description: '__reserved__' },
+        sessionOpts(session)
+      );
+    }
     throw new AppError('Insufficient wallet balance');
   }
 
-  const balanceBefore = wallet.balance;
-  wallet.balance = roundMoney(wallet.balance - roundedAmount);
-  await wallet.save();
+  if (wallet.balance < 0) {
+    throw new AppError('Wallet balance cannot be negative');
+  }
 
-  await WalletTransaction.create({
-    userId,
-    type,
-    amount: -roundedAmount,
-    balanceBefore,
-    balanceAfter: wallet.balance,
-    reference,
-    description,
-    metadata,
-  });
+  if (reference) {
+    await WalletTransaction.findOneAndUpdate(
+      { userId, reference, type },
+      {
+        $set: {
+          amount: -roundedAmount,
+          balanceBefore,
+          balanceAfter: wallet.balance,
+          description,
+          metadata: metadata ?? {},
+        },
+      },
+      sessionOpts(session)
+    );
+  } else {
+    await WalletTransaction.create([{
+      userId,
+      type,
+      amount: -roundedAmount,
+      balanceBefore,
+      balanceAfter: wallet.balance,
+      reference,
+      description,
+      metadata,
+    }], sessionOpts(session));
+  }
 
   return wallet;
 };
@@ -88,16 +229,25 @@ export const debitProfitBalance = async (
   userId: mongoose.Types.ObjectId | string,
   amount: number
 ) => {
-  const wallet = await getOrCreateWallet(userId);
   const roundedAmount = roundMoney(amount);
-
-  if (wallet.profitBalance < roundedAmount) {
-    throw new AppError('Insufficient withdrawable profit');
+  if (roundedAmount <= 0) {
+    throw new AppError('Debit amount must be positive');
   }
 
-  wallet.profitBalance = roundMoney(wallet.profitBalance - roundedAmount);
-  wallet.totalWithdrawals = roundMoney(wallet.totalWithdrawals + roundedAmount);
-  await wallet.save();
+  const wallet = await Wallet.findOneAndUpdate(
+    { userId, profitBalance: { $gte: roundedAmount } },
+    {
+      $inc: {
+        profitBalance: -roundedAmount,
+        totalWithdrawals: roundedAmount,
+      },
+    },
+    { new: true }
+  );
+
+  if (!wallet) {
+    throw new AppError('Insufficient withdrawable profit');
+  }
 
   return wallet;
 };

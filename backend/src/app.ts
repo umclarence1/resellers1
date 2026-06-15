@@ -6,16 +6,27 @@ import mongoSanitize from 'express-mongo-sanitize';
 import hpp from 'hpp';
 import path from 'path';
 import { env } from './config/env';
+import { corsOriginCallback } from './config/cors';
 import { errorHandler } from './middleware/errorHandler';
 import { generalLimiter } from './middleware/rateLimiter';
+import { sanitizeQuery } from './middleware/sanitizeQuery';
+import { validateProductionEnv } from './config/validateEnv';
+import { blockUnsafeHttpMethods, requireJsonContentType } from './middleware/httpSecurity';
+import { cloudflareProxyPrep } from './middleware/cloudflare';
 
 import authRoutes from './routes/auth.routes';
 import adminRoutes from './routes/admin.routes';
-import dealerRoutes from './routes/dealer.routes';
+import agentRoutes from './routes/agent.routes';
 import resellerRoutes from './routes/reseller.routes';
 import storeRoutes from './routes/store.routes';
-import dealerApiRoutes from './routes/dealerApi.routes';
-import webhookRoutes from './routes/webhook.routes';
+import agentApiRoutes from './routes/agentApi.routes';
+import webhookRoutes, {
+  paystackWebhookMiddleware,
+  fulfillmentWebhookMiddleware,
+} from './routes/webhook.routes';
+import supportRoutes from './routes/support.routes';
+
+validateProductionEnv();
 
 const app = express();
 
@@ -26,8 +37,10 @@ async function ensureDbReady(): Promise<void> {
     dbReady = (async () => {
       const { connectDB } = await import('./config/db');
       const { seedDatabase } = await import('./services/seedService');
+      const { warmEmailTransport } = await import('./utils/email');
       await connectDB();
       await seedDatabase();
+      void warmEmailTransport();
     })();
   }
   return dbReady;
@@ -36,7 +49,7 @@ async function ensureDbReady(): Promise<void> {
 if (process.env.VERCEL) {
   app.set('trust proxy', 1);
   app.use(async (req, _res, next) => {
-    if (req.path === '/api/health') return next();
+    if (req.path === '/api/health' || req.method === 'OPTIONS') return next();
     try {
       await ensureDbReady();
       next();
@@ -46,52 +59,63 @@ if (process.env.VERCEL) {
   });
 }
 
-app.use(helmet({
-  crossOriginResourcePolicy: { policy: 'cross-origin' },
-}));
-app.use(cors({
-  origin: env.nodeEnv === 'development'
-    ? (origin, callback) => {
-        if (!origin || /^https?:\/\/localhost(:\d+)?$/.test(origin)) {
-          callback(null, true);
-        } else {
-          callback(new Error('Not allowed by CORS'));
-        }
-      }
-    : (origin, callback) => {
-        const allowed = [env.frontendUrl, env.apiUrl].filter(Boolean);
-        if (!origin || allowed.some((url) => origin === url || origin.startsWith(url.replace(/\/$/, '')))) {
-          callback(null, true);
-        } else {
-          callback(new Error('Not allowed by CORS'));
-        }
-      },
-  credentials: true,
-}));
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true }));
+app.use(blockUnsafeHttpMethods);
+app.use(cloudflareProxyPrep);
+
+app.use(
+  helmet({
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+    contentSecurityPolicy: env.nodeEnv === 'production' ? undefined : false,
+    referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+    frameguard: { action: 'deny' },
+    hsts: env.nodeEnv === 'production' ? { maxAge: 31536000, includeSubDomains: true } : false,
+    permittedCrossDomainPolicies: { permittedPolicies: 'none' },
+  })
+);
+app.disable('x-powered-by');
+
+app.use(
+  cors({
+    origin: corsOriginCallback,
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-api-key', 'x-api-secret'],
+  })
+);
+
+// Webhook signature verification requires the raw request body (before JSON parsing).
+app.post('/api/webhooks/paystack', ...paystackWebhookMiddleware);
+app.post('/api/webhooks/fulfillment', ...fulfillmentWebhookMiddleware);
+
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 app.use(cookieParser());
-// Express 5 makes req.query read-only; sanitize body/params only
+app.use(requireJsonContentType);
+
 app.use((req, _res, next) => {
   if (req.body) req.body = mongoSanitize.sanitize(req.body);
   if (req.params) req.params = mongoSanitize.sanitize(req.params);
   next();
 });
 app.use(hpp());
+app.use(sanitizeQuery);
 app.use(generalLimiter);
 
 app.use('/uploads', express.static(path.join(process.cwd(), env.uploadDir)));
 
 app.get('/api/health', (_req, res) => {
-  res.json({ success: true, message: 'Data Bundle Reseller API is running' });
+  res.json({ success: true, message: 'topdealsgh API is running' });
 });
 
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
-app.use('/api/dealer', dealerRoutes);
+app.use('/api/agent', agentRoutes);
+app.use('/api/dealer', agentRoutes);
 app.use('/api/reseller', resellerRoutes);
 app.use('/api/store', storeRoutes);
-app.use('/api/v1/dealer', dealerApiRoutes);
+app.use('/api/support', supportRoutes);
+app.use('/api/v1/agent', agentApiRoutes);
+app.use('/api/v1/dealer', agentApiRoutes);
 app.use('/api/webhooks', webhookRoutes);
 
 app.use(errorHandler);

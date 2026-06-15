@@ -10,7 +10,11 @@ export default function VerifyOtpPage() {
   const [email, setEmail] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const { verifyOtp } = useAuth();
+  const [resending, setResending] = useState(false);
+  const [resendMessage, setResendMessage] = useState('');
+  const [resendCooldown, setResendCooldown] = useState(0);
+  const { verifyOtp, verifyTotp } = useAuth();
+  const [mfaMode, setMfaMode] = useState<'email' | 'totp'>('email');
   const navigate = useNavigate();
   const inputs = useRef<(HTMLInputElement | null)[]>([]);
   const submittingRef = useRef(false);
@@ -19,7 +23,7 @@ export default function VerifyOtpPage() {
     sessionStorage.removeItem('otpEmail');
     const loginRoutes: Record<string, string> = {
       admin: '/login/admin',
-      dealer: '/login/dealer',
+      agent: '/login/agent',
       reseller: '/login/reseller',
     };
     navigate(loginRoutes[role] || '/login/reseller', message ? { state: { message } } : undefined);
@@ -37,6 +41,8 @@ export default function VerifyOtpPage() {
       return;
     }
     setEmail(stored);
+    const mode = sessionStorage.getItem('mfaMode');
+    setMfaMode(mode === 'totp' ? 'totp' : 'email');
     setTimeout(() => inputs.current[0]?.focus(), 100);
   }, [navigate, redirectToLogin]);
 
@@ -48,12 +54,18 @@ export default function VerifyOtpPage() {
     setLoading(true);
 
     try {
-      await verifyOtp(email, code);
-      const user = JSON.parse(localStorage.getItem('user') || '{}');
-      const routes: Record<string, string> = { admin: '/admin', dealer: '/dealer', reseller: '/reseller' };
+      if (mfaMode === 'totp') {
+        await verifyTotp(email, code);
+      } else {
+        await verifyOtp(email, code);
+      }
+      const { getStoredUser } = await import('@/lib/api');
+      const user = (getStoredUser() || {}) as { role?: string };
+      const routes: Record<string, string> = { admin: '/admin', agent: '/agent', reseller: '/reseller' };
       sessionStorage.removeItem('otpEmail');
       sessionStorage.removeItem('otpRole');
-      navigate(routes[user.role] || '/');
+      sessionStorage.removeItem('mfaMode');
+      navigate(user.role ? routes[user.role] ?? '/' : '/');
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Verification failed';
       if (message.toLowerCase().includes('user not found')) {
@@ -67,7 +79,7 @@ export default function VerifyOtpPage() {
     } finally {
       setLoading(false);
     }
-  }, [email, verifyOtp, navigate, redirectToLogin]);
+  }, [email, mfaMode, verifyOtp, verifyTotp, navigate, redirectToLogin]);
 
   useEffect(() => {
     const code = otp.join('');
@@ -104,10 +116,21 @@ export default function VerifyOtpPage() {
     }
   };
 
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const timer = window.setTimeout(() => setResendCooldown((s) => s - 1), 1000);
+    return () => window.clearTimeout(timer);
+  }, [resendCooldown]);
+
   const resendOtp = async () => {
+    if (resending || resendCooldown > 0 || !email) return;
+    setResending(true);
+    setResendMessage('');
+    setError('');
     try {
       await api.post('/auth/resend-otp', { email });
-      setError('');
+      setResendMessage('A new code has been sent. Check your inbox and spam folder.');
+      setResendCooldown(30);
       setOtp(['', '', '', '', '', '']);
       inputs.current[0]?.focus();
     } catch (err) {
@@ -117,6 +140,8 @@ export default function VerifyOtpPage() {
         return;
       }
       setError(message);
+    } finally {
+      setResending(false);
     }
   };
 
@@ -127,8 +152,14 @@ export default function VerifyOtpPage() {
         <div className="mb-8">
           <BrandLogo size="lg" />
         </div>
-        <h1 className="text-xl sm:text-2xl font-bold text-white mb-2">Verify Your Email</h1>
-        <p className="text-gray-400 mb-2">Enter the 6-digit code sent to</p>
+        <h1 className="text-xl sm:text-2xl font-bold text-white mb-2">
+          {mfaMode === 'totp' ? 'Authenticator Code' : 'Verify Your Email'}
+        </h1>
+        <p className="text-gray-400 mb-2">
+          {mfaMode === 'totp'
+            ? 'Enter the 6-digit code from your authenticator app for'
+            : 'Enter the 6-digit code sent to'}
+        </p>
         <p className="text-white font-medium mb-8">{email}</p>
 
         <div className="bg-white rounded-xl border shadow-xl shadow-black/20 p-6">
@@ -163,15 +194,38 @@ export default function VerifyOtpPage() {
           )}
 
           {error && <p className="text-sm text-red-600 bg-red-50 p-3 rounded-lg mb-4">{error}</p>}
+          {resendMessage && (
+            <p className="text-sm text-emerald-700 bg-emerald-50 p-3 rounded-lg mb-4">{resendMessage}</p>
+          )}
 
-          <button
-            type="button"
-            onClick={resendOtp}
-            disabled={loading}
-            className="text-sm text-amber-700 hover:underline disabled:opacity-50"
-          >
-            Resend OTP
-          </button>
+          {mfaMode === 'totp' ? (
+            <button
+              type="button"
+              onClick={() => {
+                sessionStorage.setItem('mfaMode', 'email');
+                setMfaMode('email');
+                setOtp(['', '', '', '', '', '']);
+                void resendOtp();
+              }}
+              disabled={loading || resending}
+              className="text-sm text-amber-700 hover:underline disabled:opacity-50"
+            >
+              {resending ? 'Sending email OTP...' : 'Use email OTP backup instead'}
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={resendOtp}
+              disabled={loading || resending || resendCooldown > 0}
+              className="text-sm text-amber-700 hover:underline disabled:opacity-50"
+            >
+              {resending
+                ? 'Sending...'
+                : resendCooldown > 0
+                  ? `Resend OTP (${resendCooldown}s)`
+                  : 'Resend OTP'}
+            </button>
+          )}
         </div>
 
         <div className="mt-5 text-center">

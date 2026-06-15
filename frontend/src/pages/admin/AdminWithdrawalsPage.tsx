@@ -5,8 +5,12 @@ import DashboardLayout from '@/components/layout/DashboardLayout';
 import { Card } from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 import { formatCurrency } from '@/lib/utils';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { Loader2, Wallet } from 'lucide-react';
+import ScrollTable from '@/components/ui/ScrollTable';
+import { MobileDataCard, MobileDataCardList, MobileDataCardRow } from '@/components/ui/MobileDataCard';
+import { cn } from '@/lib/utils';
+import AdminActionConfirmModal from '@/components/admin/AdminActionConfirmModal';
 
 type WithdrawalRow = {
   _id: string;
@@ -25,6 +29,7 @@ type WithdrawalRow = {
 const STATUS_STYLES: Record<string, string> = {
   pending: 'bg-amber-100 text-amber-800',
   approved: 'bg-blue-100 text-blue-800',
+  processed: 'bg-green-100 text-green-700',
   paid: 'bg-green-100 text-green-700',
   rejected: 'bg-red-100 text-red-700',
 };
@@ -36,6 +41,7 @@ export default function AdminWithdrawalsPage() {
   const [poolBalance, setPoolBalance] = useState(0);
   const [pageLoading, setPageLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [pendingAction, setPendingAction] = useState<{ id: string; status: string } | null>(null);
 
   useEffect(() => {
     if (!loading && (!user || user.role !== 'admin')) navigate('/login/admin');
@@ -59,17 +65,33 @@ export default function AdminWithdrawalsPage() {
     if (user?.role === 'admin') load();
   }, [user]);
 
-  const updateStatus = async (id: string, status: string) => {
-    setUpdatingId(id);
+  const updateStatus = (id: string, status: string) => {
+    setPendingAction({ id, status });
+  };
+
+  const confirmUpdateStatus = async (adminOtp: string) => {
+    if (!pendingAction) return;
+    setUpdatingId(pendingAction.id);
     try {
-      await api.patch(`/admin/withdrawals/${id}`, { status });
-      load();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to update withdrawal');
+      await api.patch(`/admin/withdrawals/${pendingAction.id}`, {
+        status: pendingAction.status,
+        adminOtp,
+      });
+      await load();
     } finally {
       setUpdatingId(null);
     }
   };
+
+  const actionLabels: Record<string, { title: string; confirm: string }> = {
+    approved: { title: 'Pay via Paystack', confirm: 'Send MoMo payout' },
+    rejected: { title: 'Reject withdrawal', confirm: 'Reject' },
+    processed: { title: 'Retry Paystack payout', confirm: 'Retry payout' },
+  };
+
+  const paystackPayoutFailed = (w: WithdrawalRow) =>
+    w.status === 'processed' &&
+    (!w.paystackTransferStatus || w.paystackTransferStatus === 'failed');
 
   if (loading || !user) return null;
 
@@ -77,7 +99,9 @@ export default function AdminWithdrawalsPage() {
     <DashboardLayout role="admin">
       <h1 className="text-xl sm:text-2xl font-bold text-white mb-1">Withdrawals</h1>
       <p className="text-sm text-gray-400 mb-6">
-        Approve requests to debit the pool and send MoMo via Paystack. Use &quot;Mark paid&quot; if Paystack payout was manual.
+        When you approve a request, Paystack sends the exact amount to the reseller&apos;s MoMo from your
+        Paystack balance. Paystack transfer fees are deducted from your balance on top of the payout amount.
+        Keep enough funds in Paystack (e.g. GHS 3 request may need GHS 3 + fees).
       </p>
 
       <Card className="p-5 mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -86,13 +110,16 @@ export default function AdminWithdrawalsPage() {
             <Wallet className="w-5 h-5" />
           </div>
           <div>
-            <p className="text-xs text-gray-500 uppercase tracking-wide">Withdrawal pool balance</p>
+            <p className="text-xs text-gray-500 uppercase tracking-wide">In-app pool tracker</p>
             <p className="text-2xl font-bold text-gray-900">{formatCurrency(poolBalance)}</p>
+            <p className="text-xs text-gray-500 mt-1">
+              Payouts are sent from your Paystack balance. Pool is optional bookkeeping.
+            </p>
           </div>
         </div>
-        <Link to="/admin/settings">
-          <Button>Add funds to pool</Button>
-        </Link>
+        <a href="https://dashboard.paystack.com" target="_blank" rel="noopener noreferrer">
+          <Button variant="outline">Open Paystack dashboard</Button>
+        </a>
       </Card>
 
       {pageLoading ? (
@@ -102,7 +129,58 @@ export default function AdminWithdrawalsPage() {
         </div>
       ) : (
         <Card className="overflow-hidden">
-          <div className="overflow-x-auto">
+          {withdrawals.length === 0 ? (
+            <p className="p-10 text-center text-gray-500 text-sm">No withdrawal requests</p>
+          ) : (
+            <MobileDataCardList>
+              {withdrawals.map((w) => {
+                const busy = updatingId === w._id;
+                return (
+                  <MobileDataCard
+                    key={w._id}
+                    actions={
+                      <div className="flex flex-wrap gap-2 w-full">
+                        {w.status === 'pending' && (
+                          <>
+                            <Button
+                              size="sm"
+                              disabled={busy}
+                              onClick={() => updateStatus(w._id, 'approved')}
+                            >
+                              Pay via Paystack
+                            </Button>
+                            <Button size="sm" variant="outline" disabled={busy} onClick={() => updateStatus(w._id, 'rejected')}>
+                              Reject
+                            </Button>
+                          </>
+                        )}
+                        {paystackPayoutFailed(w) && (
+                          <Button size="sm" variant="outline" disabled={busy} onClick={() => updateStatus(w._id, 'processed')}>
+                            Retry Paystack
+                          </Button>
+                        )}
+                      </div>
+                    }
+                  >
+                    <div className="flex items-start justify-between gap-2 mb-2">
+                      <p className="text-sm font-semibold text-gray-900">{w.userId?.fullName || '—'}</p>
+                      <span className={cn('px-2 py-0.5 rounded-full text-[10px] font-medium capitalize shrink-0', STATUS_STYLES[w.status] || 'bg-gray-100 text-gray-600')}>
+                        {w.status}
+                      </span>
+                    </div>
+                    <div className="space-y-1.5">
+                      <MobileDataCardRow label="Amount" value={formatCurrency(w.amount)} />
+                      <MobileDataCardRow label="MoMo" value={`${w.network} · ${w.mobileNumber}`} />
+                      <MobileDataCardRow label="Account" value={w.accountName} />
+                      <MobileDataCardRow label="Date" value={new Date(w.createdAt).toLocaleString()} />
+                    </div>
+                  </MobileDataCard>
+                );
+              })}
+            </MobileDataCardList>
+          )}
+
+          <ScrollTable className="hidden md:block">
             <table className="w-full text-sm min-w-[900px]">
               <thead className="bg-gray-50 border-b border-gray-100">
                 <tr>
@@ -115,12 +193,7 @@ export default function AdminWithdrawalsPage() {
                 </tr>
               </thead>
               <tbody>
-                {withdrawals.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} className="px-4 py-10 text-center text-gray-500">No withdrawal requests</td>
-                  </tr>
-                ) : (
-                  withdrawals.map((w) => {
+                {withdrawals.map((w) => {
                     const busy = updatingId === w._id;
                     return (
                       <tr key={w._id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50/50">
@@ -151,35 +224,39 @@ export default function AdminWithdrawalsPage() {
                               <>
                                 <Button
                                   size="sm"
-                                  disabled={busy || w.amount > poolBalance}
+                                  disabled={busy}
                                   onClick={() => updateStatus(w._id, 'approved')}
-                                  title={w.amount > poolBalance ? 'Insufficient pool balance — add funds in Settings' : undefined}
                                 >
-                                  Approve
+                                  Pay via Paystack
                                 </Button>
-                                {w.amount > poolBalance && (
-                                  <span className="text-xs text-red-600">Need {formatCurrency(w.amount - poolBalance)} more in pool</span>
-                                )}
                                 <Button size="sm" variant="outline" disabled={busy} onClick={() => updateStatus(w._id, 'rejected')}>
                                   Reject
                                 </Button>
                               </>
                             )}
-                            {w.status === 'approved' && (
-                              <Button size="sm" disabled={busy} onClick={() => updateStatus(w._id, 'paid')}>
-                                Mark paid
+                            {paystackPayoutFailed(w) && (
+                              <Button size="sm" variant="outline" disabled={busy} onClick={() => updateStatus(w._id, 'processed')}>
+                                Retry Paystack
                               </Button>
                             )}
                           </div>
                         </td>
                       </tr>
                     );
-                  })
-                )}
+                  })}
               </tbody>
             </table>
-          </div>
+          </ScrollTable>
         </Card>
+      )}
+
+      {pendingAction && (
+        <AdminActionConfirmModal
+          title={actionLabels[pendingAction.status]?.title ?? 'Confirm action'}
+          confirmLabel={actionLabels[pendingAction.status]?.confirm ?? 'Confirm'}
+          onClose={() => setPendingAction(null)}
+          onConfirm={confirmUpdateStatus}
+        />
       )}
     </DashboardLayout>
   );

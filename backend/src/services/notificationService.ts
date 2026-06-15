@@ -13,7 +13,7 @@ export const createNotification = async (
   await Notification.create({ userId, type, title, message, metadata });
 
   const user = await User.findById(userId);
-  if (user?.email) {
+  if (user?.email && type !== 'order_delivered') {
     sendNotificationEmail(user.email, title, message).catch(console.error);
   }
 };

@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils';
 import { useNavigate } from 'react-router-dom';
 import { Loader2, MessageSquare, ShieldOff, ShieldCheck } from 'lucide-react';
 
-interface ComplaintRow {
+interface ResellerComplaintRow {
   _id: string;
   orderId: string;
   phoneNumber: string;
@@ -25,6 +25,27 @@ interface ComplaintRow {
     resellerStore?: { storeName: string };
   };
 }
+
+interface CustomerComplaintRow {
+  _id: string;
+  orderId: string;
+  storeSlug: string;
+  recipientPhone: string;
+  customerEmail?: string;
+  issueType: string;
+  description: string;
+  status: string;
+  adminResponse?: string;
+  createdAt: string;
+  resellerId?: {
+    _id: string;
+    fullName: string;
+    email: string;
+    resellerStore?: { storeName: string };
+  };
+}
+
+type Tab = 'reseller' | 'customer';
 
 const STATUS_STYLES: Record<string, string> = {
   pending: 'bg-amber-100 text-amber-800',
@@ -46,7 +67,9 @@ const formatDate = (iso: string) =>
 export default function AdminComplaintsPage() {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
-  const [complaints, setComplaints] = useState<ComplaintRow[]>([]);
+  const [tab, setTab] = useState<Tab>('reseller');
+  const [complaints, setComplaints] = useState<ResellerComplaintRow[]>([]);
+  const [customerComplaints, setCustomerComplaints] = useState<CustomerComplaintRow[]>([]);
   const [globalEnabled, setGlobalEnabled] = useState(true);
   const [pageLoading, setPageLoading] = useState(true);
   const [updating, setUpdating] = useState<string | null>(null);
@@ -59,11 +82,13 @@ export default function AdminComplaintsPage() {
   const load = useCallback(async () => {
     setPageLoading(true);
     try {
-      const [complaintsRes, settingsRes] = await Promise.all([
+      const [complaintsRes, customerRes, settingsRes] = await Promise.all([
         api.get('/admin/complaints'),
+        api.get('/admin/customer-complaints'),
         api.get('/admin/settings/complaints'),
       ]);
       setComplaints(complaintsRes.data.data);
+      setCustomerComplaints(customerRes.data.data);
       setGlobalEnabled(settingsRes.data.data.globalEnabled);
       setError('');
     } catch (err) {
@@ -77,11 +102,25 @@ export default function AdminComplaintsPage() {
     if (user?.role === 'admin') load();
   }, [user, load]);
 
-  const resolveComplaint = async (id: string) => {
+  const resolveResellerComplaint = async (id: string) => {
     setUpdating(id);
     try {
       await api.patch(`/admin/complaints/${id}`, { status: 'resolved' });
       setComplaints((prev) =>
+        prev.map((c) => (c._id === id ? { ...c, status: 'resolved' } : c))
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update complaint');
+    } finally {
+      setUpdating(null);
+    }
+  };
+
+  const resolveCustomerComplaint = async (id: string) => {
+    setUpdating(id);
+    try {
+      await api.patch(`/admin/customer-complaints/${id}`, { status: 'resolved' });
+      setCustomerComplaints((prev) =>
         prev.map((c) => (c._id === id ? { ...c, status: 'resolved' } : c))
       );
     } catch (err) {
@@ -126,7 +165,12 @@ export default function AdminComplaintsPage() {
 
   if (loading || !user) return null;
 
-  const pending = complaints.filter((c) => c.status === 'pending' || c.status === 'under_review');
+  const pendingReseller = complaints.filter(
+    (c) => c.status === 'pending' || c.status === 'under_review'
+  );
+  const pendingCustomer = customerComplaints.filter(
+    (c) => c.status === 'pending' || c.status === 'under_review'
+  );
 
   return (
     <DashboardLayout role="admin">
@@ -134,7 +178,7 @@ export default function AdminComplaintsPage() {
         <div>
           <h1 className="text-xl sm:text-2xl font-bold text-white mb-1">Complaints</h1>
           <p className="text-sm text-gray-400">
-            {pending.length} open complaint{pending.length !== 1 ? 's' : ''}
+            {pendingReseller.length} reseller · {pendingCustomer.length} customer open
           </p>
         </div>
         <Button
@@ -147,20 +191,47 @@ export default function AdminComplaintsPage() {
           {globalEnabled ? (
             <>
               <ShieldOff className="w-4 h-4" />
-              Disable all reseller complaints
+              Disable all complaints
             </>
           ) : (
             <>
               <ShieldCheck className="w-4 h-4" />
-              Enable reseller complaints
+              Enable complaints
             </>
           )}
         </Button>
       </div>
 
+      <div className="flex gap-2 mb-4">
+        <button
+          type="button"
+          onClick={() => setTab('reseller')}
+          className={cn(
+            'px-4 py-2 rounded-lg text-sm font-medium transition-colors',
+            tab === 'reseller'
+              ? 'bg-gold text-navy'
+              : 'bg-navy-light text-gray-400 border border-navy-border hover:text-white'
+          )}
+        >
+          Reseller ({complaints.length})
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab('customer')}
+          className={cn(
+            'px-4 py-2 rounded-lg text-sm font-medium transition-colors',
+            tab === 'customer'
+              ? 'bg-gold text-navy'
+              : 'bg-navy-light text-gray-400 border border-navy-border hover:text-white'
+          )}
+        >
+          Customer ({customerComplaints.length})
+        </button>
+      </div>
+
       {!globalEnabled && (
         <p className="text-sm text-amber-300 bg-amber-500/10 border border-amber-500/20 p-3 rounded-lg mb-4">
-          Complaints are disabled globally — resellers cannot submit new complaints.
+          Complaints are disabled globally — new complaints cannot be submitted.
         </p>
       )}
 
@@ -173,16 +244,80 @@ export default function AdminComplaintsPage() {
           <Loader2 className="w-5 h-5 animate-spin" />
           Loading complaints...
         </div>
-      ) : complaints.length === 0 ? (
+      ) : tab === 'reseller' ? (
+        complaints.length === 0 ? (
+          <Card className="p-10 text-center">
+            <MessageSquare className="w-10 h-10 text-gray-300 mx-auto mb-3" />
+            <p className="text-gray-900 font-medium">No reseller complaints yet</p>
+          </Card>
+        ) : (
+          <div className="space-y-4">
+            {complaints.map((c) => {
+              const reseller = c.userId;
+              const complaintsAllowed = reseller?.complaintEnabled !== false;
+              return (
+                <Card key={c._id} className="p-5">
+                  <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2 mb-2">
+                        <span
+                          className={cn(
+                            'px-2.5 py-1 rounded-full text-xs font-semibold capitalize',
+                            STATUS_STYLES[c.status] || STATUS_STYLES.pending
+                          )}
+                        >
+                          {c.status.replace('_', ' ')}
+                        </span>
+                        <span className="font-mono text-xs text-gray-500">{c.orderId}</span>
+                      </div>
+                      <p className="text-gray-900 font-medium">
+                        Phone: <span className="text-gold">{c.phoneNumber}</span>
+                      </p>
+                      <p className="text-sm text-gray-600 mt-1">
+                        {c.issueType} — {c.description}
+                      </p>
+                      <p className="text-xs text-gray-500 mt-2">
+                        Reseller: {reseller?.fullName || '—'} ({reseller?.email}) ·{' '}
+                        {formatDate(c.createdAt)}
+                      </p>
+                    </div>
+                    <div className="flex flex-col sm:flex-row gap-2 shrink-0">
+                      {c.status !== 'resolved' && (
+                        <Button
+                          size="sm"
+                          loading={updating === c._id}
+                          onClick={() => resolveResellerComplaint(c._id)}
+                        >
+                          Mark resolved
+                        </Button>
+                      )}
+                      {reseller?._id && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          loading={updating === reseller._id}
+                          onClick={() => toggleResellerAccess(reseller._id, !complaintsAllowed)}
+                        >
+                          {complaintsAllowed ? 'Disable complaints' : 'Enable complaints'}
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </Card>
+              );
+            })}
+          </div>
+        )
+      ) : customerComplaints.length === 0 ? (
         <Card className="p-10 text-center">
           <MessageSquare className="w-10 h-10 text-gray-300 mx-auto mb-3" />
-          <p className="text-gray-900 font-medium">No complaints yet</p>
+          <p className="text-gray-900 font-medium">No customer complaints yet</p>
+          <p className="text-sm text-gray-500 mt-1">Submitted via the Help Assistant on store pages</p>
         </Card>
       ) : (
         <div className="space-y-4">
-          {complaints.map((c) => {
-            const reseller = c.userId;
-            const complaintsAllowed = reseller?.complaintEnabled !== false;
+          {customerComplaints.map((c) => {
+            const reseller = c.resellerId;
             return (
               <Card key={c._id} className="p-5">
                 <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
@@ -197,39 +332,31 @@ export default function AdminComplaintsPage() {
                         {c.status.replace('_', ' ')}
                       </span>
                       <span className="font-mono text-xs text-gray-500">{c.orderId}</span>
+                      <span className="text-xs text-violet-600 font-medium">Customer</span>
                     </div>
                     <p className="text-gray-900 font-medium">
-                      Phone: <span className="text-gold">{c.phoneNumber}</span>
+                      Phone: <span className="text-gold">{c.recipientPhone}</span>
+                      {c.customerEmail && (
+                        <span className="text-gray-600 font-normal"> · {c.customerEmail}</span>
+                      )}
                     </p>
                     <p className="text-sm text-gray-600 mt-1">
-                      {c.issueType} — {c.description}
+                      Store: {c.storeSlug} · {c.issueType} — {c.description}
                     </p>
                     <p className="text-xs text-gray-500 mt-2">
-                      Reseller: {reseller?.fullName || '—'} ({reseller?.email}) ·{' '}
-                      {formatDate(c.createdAt)}
+                      Reseller: {reseller?.fullName || '—'} (
+                      {reseller?.resellerStore?.storeName || reseller?.email}) · {formatDate(c.createdAt)}
                     </p>
                   </div>
-                  <div className="flex flex-col sm:flex-row gap-2 shrink-0">
-                    {c.status !== 'resolved' && (
-                      <Button
-                        size="sm"
-                        loading={updating === c._id}
-                        onClick={() => resolveComplaint(c._id)}
-                      >
-                        Mark resolved
-                      </Button>
-                    )}
-                    {reseller?._id && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        loading={updating === reseller._id}
-                        onClick={() => toggleResellerAccess(reseller._id, !complaintsAllowed)}
-                      >
-                        {complaintsAllowed ? 'Disable complaints' : 'Enable complaints'}
-                      </Button>
-                    )}
-                  </div>
+                  {c.status !== 'resolved' && (
+                    <Button
+                      size="sm"
+                      loading={updating === c._id}
+                      onClick={() => resolveCustomerComplaint(c._id)}
+                    >
+                      Mark resolved
+                    </Button>
+                  )}
                 </div>
               </Card>
             );

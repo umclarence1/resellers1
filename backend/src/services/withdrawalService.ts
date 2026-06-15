@@ -6,9 +6,14 @@ import { AppError } from '../middleware/errorHandler';
 import { roundMoney, isValidGhanaPhone } from '../utils/helpers';
 import { getSettings, debitWithdrawalPool } from './settingsService';
 import { getOrCreateWallet } from './walletService';
+import { env } from '../config/env';
 
 const MAX_PENDING_WITHDRAWALS = 3;
 const MOBILE_NETWORKS = ['MTN', 'Telecel', 'AirtelTigo'] as const;
+
+function paystackPayoutsEnabled(): boolean {
+  return Boolean(env.paystack.secretKey);
+}
 
 export function parseWithdrawalAmount(raw: unknown): number {
   const num = typeof raw === 'string' ? parseFloat(raw) : raw;
@@ -147,10 +152,17 @@ export async function requestWithdrawal(
     });
   } catch (err) {
     await releaseWithdrawalFunds(userId, amount);
+    if (err instanceof mongoose.Error.ValidationError) {
+      const message = Object.values(err.errors)
+        .map((e) => e.message)
+        .join('. ');
+      throw new AppError(message || 'Invalid withdrawal request');
+    }
     throw err;
   }
 }
 
+/** Admin approval step — funds stay reserved until processing. */
 export async function approveWithdrawal(withdrawalId: string) {
   const withdrawal = await Withdrawal.findById(withdrawalId);
   if (!withdrawal) throw new AppError('Withdrawal not found');
@@ -158,9 +170,48 @@ export async function approveWithdrawal(withdrawalId: string) {
     throw new AppError('Withdrawal already processed');
   }
 
+  const settings = await getSettings();
+  if (
+    !paystackPayoutsEnabled() &&
+    (settings.withdrawalPoolBalance || 0) < withdrawal.amount
+  ) {
+    throw new AppError('Insufficient withdrawal pool balance. Add funds in Settings first.');
+  }
+
+  withdrawal.status = 'approved';
+  withdrawal.adminNote = [
+    withdrawal.adminNote,
+    `Approved ${new Date().toISOString()}`,
+  ]
+    .filter(Boolean)
+    .join(' | ');
+  await withdrawal.save();
+
+  return withdrawal;
+}
+
+/** Finalize reserved funds, debit pool, and mark withdrawal processed. */
+export async function processWithdrawal(withdrawalId: string) {
+  const withdrawal = await Withdrawal.findById(withdrawalId);
+  if (!withdrawal) throw new AppError('Withdrawal not found');
+  if (withdrawal.status !== 'approved') {
+    throw new AppError('Only approved withdrawals can be processed');
+  }
+
+  const duplicateTx = await WalletTransaction.findOne({
+    userId: withdrawal.userId,
+    reference: withdrawal._id.toString(),
+    type: 'withdrawal',
+    description: { $ne: '__reserved__' },
+  });
+  if (duplicateTx) {
+    throw new AppError('Withdrawal already processed');
+  }
+
   const amount = withdrawal.amount;
   const settings = await getSettings();
-  if ((settings.withdrawalPoolBalance || 0) < amount) {
+  const poolCoversPayout = (settings.withdrawalPoolBalance || 0) >= amount;
+  if (!paystackPayoutsEnabled() && !poolCoversPayout) {
     throw new AppError('Insufficient withdrawal pool balance. Add funds in Settings first.');
   }
 
@@ -168,7 +219,6 @@ export async function approveWithdrawal(withdrawalId: string) {
   if (withdrawal.fundsReserved) {
     wallet = await finalizeWithdrawalFunds(withdrawal.userId, amount);
   } else {
-    // Legacy pending request (before reservation was enforced)
     wallet = await Wallet.findOneAndUpdate(
       { userId: withdrawal.userId, profitBalance: { $gte: amount } },
       { $inc: { profitBalance: -amount, totalWithdrawals: amount } },
@@ -180,7 +230,9 @@ export async function approveWithdrawal(withdrawalId: string) {
   }
 
   try {
-    await debitWithdrawalPool(amount);
+    if (poolCoversPayout) {
+      await debitWithdrawalPool(amount);
+    }
   } catch (err) {
     if (withdrawal.fundsReserved) {
       await Wallet.findOneAndUpdate(
@@ -203,11 +255,11 @@ export async function approveWithdrawal(withdrawalId: string) {
     balanceBefore: roundMoney(wallet.profitBalance + amount),
     balanceAfter: wallet.profitBalance,
     reference: withdrawal._id.toString(),
-    description: `Withdrawal approved: GHS ${amount}`,
+    description: `Withdrawal processed: GHS ${amount}`,
     metadata: { withdrawalId: withdrawal._id, network: withdrawal.network },
   });
 
-  withdrawal.status = 'approved';
+  withdrawal.status = 'processed';
   withdrawal.processedAt = new Date();
   await withdrawal.save();
 
@@ -232,15 +284,20 @@ export async function rejectWithdrawal(withdrawalId: string, adminNote?: string)
   return withdrawal;
 }
 
+/** Manual confirmation when MoMo was sent outside Paystack automation. */
 export async function markWithdrawalPaid(withdrawalId: string) {
   const withdrawal = await Withdrawal.findById(withdrawalId);
   if (!withdrawal) throw new AppError('Withdrawal not found');
-  if (withdrawal.status !== 'approved') {
-    throw new AppError('Only approved withdrawals can be marked paid');
+  if (!['approved', 'processed'].includes(withdrawal.status)) {
+    throw new AppError('Only approved or processed withdrawals can be marked paid');
+  }
+
+  if (withdrawal.status === 'approved') {
+    return processWithdrawal(withdrawalId);
   }
 
   withdrawal.status = 'paid';
-  withdrawal.processedAt = new Date();
+  withdrawal.processedAt = withdrawal.processedAt ?? new Date();
   await withdrawal.save();
 
   return withdrawal;

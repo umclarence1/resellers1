@@ -4,6 +4,12 @@ import { FeatureCard, ServiceCard } from '@/components/ui/ModernCard';
 import { getNetworkImage } from '@/lib/network-images';
 import { Link } from 'react-router-dom';
 import SiteNavbar from '@/components/layout/SiteNavbar';
+import { BrandMark } from '@/components/ui/BrandLogo';
+import { PLATFORM_FOOTER, PLATFORM_NAME } from '@/lib/brand';
+import ContactHelpButton from '@/components/ui/ContactHelpButton';
+import ResultsCheckerPromo from '@/components/ui/ResultsCheckerPromo';
+import WhatsAppFloat from '@/components/ui/WhatsAppFloat';
+import { ADMIN_SUPPORT_DISPLAY, ADMIN_SUPPORT_PHONE } from '@/lib/support-contact';
 
 export default function HomePage() {
   return (
@@ -40,17 +46,27 @@ export default function HomePage() {
                 ))}
               </ul>
 
-              <div className="flex flex-col sm:flex-row gap-4">
-                <Link to="/register">
-                  <Button size="lg" className="w-full sm:w-auto">
-                    Become A Reseller
-                  </Button>
-                </Link>
-                <Link to="/login/dealer">
-                  <Button size="lg" variant="outline" className="w-full sm:w-auto">
-                    Dealer Login
-                  </Button>
-                </Link>
+              <div className="flex flex-col gap-3 sm:gap-4">
+                <div className="flex flex-wrap gap-2 sm:gap-4">
+                  <Link to="/register">
+                    <Button
+                      size="sm"
+                      className="px-4 py-2 rounded-md sm:px-7 sm:py-3 sm:text-base sm:rounded-lg shadow-sm sm:shadow-md"
+                    >
+                      Become A Reseller
+                    </Button>
+                  </Link>
+                  <Link to="/login/agent">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="px-4 py-2 rounded-md border sm:px-7 sm:py-3 sm:text-base sm:rounded-lg sm:border-2"
+                    >
+                      Agent Login
+                    </Button>
+                  </Link>
+                  <ResultsCheckerPromo />
+                </div>
               </div>
             </div>
 
@@ -61,9 +77,7 @@ export default function HomePage() {
                 <div className="bg-navy-light border-4 border-navy-border rounded-[2.5rem] p-3 shadow-2xl shadow-black/40">
                   <div className="bg-white rounded-[2rem] overflow-hidden">
                     <div className="bg-navy px-5 py-4">
-                      <span className="text-white font-bold text-sm">
-                        Data<span className="text-gold">Bundle</span>
-                      </span>
+                      <BrandMark className="text-white font-bold text-sm" />
                     </div>
                     <div className="p-4 space-y-2">
                       {['MTN Data Bundles', 'Telecel Packages', 'AirtelTigo Plans', 'Wallet & Earnings', 'My Store'].map((item) => (
@@ -102,7 +116,7 @@ export default function HomePage() {
       <section id="features" className="py-20 bg-navy-light/50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
           <h2 className="text-2xl sm:text-3xl font-bold text-center text-white mb-4">Why Choose Us</h2>
-          <p className="text-center text-gray-400 mb-12 max-w-xl mx-auto">Trusted by resellers and dealers across Ghana</p>
+          <p className="text-center text-gray-400 mb-12 max-w-xl mx-auto">Trusted by resellers and Agents across Ghana</p>
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5 lg:gap-6">
             {[
               { title: 'Instant Activation', desc: 'Data delivered within minutes of purchase' },
@@ -148,16 +162,24 @@ export default function HomePage() {
       {/* Footer */}
       <footer className="border-t border-navy-border py-8 pb-24">
         <div className="max-w-7xl mx-auto px-4 text-center text-sm text-gray-500">
-          <p className="font-semibold text-white mb-2">DataBundle Ghana</p>
+          <p className="font-semibold text-white mb-2">{PLATFORM_NAME}</p>
           <p className="mb-2">
             Support line:{' '}
-            <a href="tel:+233595399837" className="text-gold font-medium hover:underline">
-              +233 59 539 9837
-            </a>
+            <ContactHelpButton
+              phone={ADMIN_SUPPORT_PHONE}
+              displayPhone={ADMIN_SUPPORT_DISPLAY}
+              smsBody="Hi topdealsgh, I need support."
+              whatsAppText="Hi topdealsgh, I need support."
+              className="text-gold font-medium hover:underline"
+            >
+              {ADMIN_SUPPORT_DISPLAY}
+            </ContactHelpButton>
           </p>
-          <p>&copy; {new Date().getFullYear()} DataBundle. All rights reserved.</p>
+          <p>{PLATFORM_FOOTER}</p>
         </div>
       </footer>
+
+      <WhatsAppFloat />
     </div>
   );
 }

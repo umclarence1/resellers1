@@ -21,6 +21,12 @@ export interface IServiceImage {
   isAvailable: boolean;
 }
 
+export interface IFulfillmentSettings {
+  /** Master switch — when false, no orders are sent to the external API */
+  enabled: boolean;
+  networkRouting: Record<Network, boolean>;
+}
+
 export interface ISetting extends Document {
   processingFeePercent: number;
   paystackChargePercent: number;
@@ -29,6 +35,7 @@ export interface ISetting extends Document {
   totalPoolDeposits: number;
   complaintSettings: IComplaintSettings;
   referralSettings: IReferralSettings;
+  fulfillmentSettings: IFulfillmentSettings;
   serviceImages: IServiceImage[];
   updatedAt: Date;
 }
@@ -55,6 +62,14 @@ const settingSchema = new Schema<ISetting>(
       commissionType: { type: String, enum: ['fixed', 'percentage'], default: 'fixed' },
       commissionValue: { type: Number, default: 5 },
       isEnabled: { type: Boolean, default: true },
+    },
+    fulfillmentSettings: {
+      enabled: { type: Boolean, default: true },
+      networkRouting: {
+        MTN: { type: Boolean, default: false },
+        Telecel: { type: Boolean, default: false },
+        AirtelTigo: { type: Boolean, default: false },
+      },
     },
     serviceImages: [
       {

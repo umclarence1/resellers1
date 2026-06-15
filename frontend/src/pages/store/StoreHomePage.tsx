@@ -8,13 +8,16 @@ import StoreLoadState from '@/components/store/StoreLoadState';
 
 import Button from '@/components/ui/Button';
 
-import { ChevronDown, Phone } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
+import StoreContactLinks from '@/components/store/StoreContactLinks';
 
 import { FeatureCard, ServiceCard, InfoCard } from '@/components/ui/ModernCard';
 
 import { getNetworkImage } from '@/lib/network-images';
 
 import { useParams, Link, useLocation, useSearchParams } from 'react-router-dom';
+import { buildStoreBuyPath, buildStoreHomePath, persistStoreRef } from '@/lib/reseller-store-ref';
+import { PLATFORM_NAME } from '@/lib/brand';
 
 
 
@@ -36,12 +39,17 @@ interface StoreInfo {
 
 
 
-export default function StoreHomePage() {
-
+export default function StoreHomePage({
+  slugOverride,
+  mainDomain = false,
+}: {
+  slugOverride?: string;
+  mainDomain?: boolean;
+}) {
   const params = useParams();
   const location = useLocation();
-  const [searchParams] = useSearchParams();
-  const slug = params.slug as string;
+  const [searchParams, setSearchParams] = useSearchParams();
+  const slug = slugOverride || (params.slug as string) || searchParams.get('r') || '';
   const tabParam = searchParams.get('tab') as StoreTab | null;
   const paidSuccess = searchParams.get('paid') === '1';
   const [store, setStore] = useState<StoreInfo | null>(null);
@@ -60,6 +68,8 @@ export default function StoreHomePage() {
 
 
   useEffect(() => {
+    if (!slug) return;
+    if (mainDomain) persistStoreRef(slug);
     setLoading(true);
     setLoadError('');
     setStore(null);
@@ -74,10 +84,26 @@ export default function StoreHomePage() {
       .catch(() => setFaqs([]));
   }, [slug]);
 
+  const handleTabChange = (tab: StoreTab) => {
+    setActiveTab(tab);
+    if (mainDomain && slug) {
+      const next: Record<string, string> = { r: slug };
+      if (tab !== 'home') next.tab = tab;
+      setSearchParams(next, { replace: true });
+    }
+  };
+
+  if (!slug) {
+    return <StoreLoadState loading={false} error="Invalid store link" />;
+  }
+
   if (loading || loadError) {
-    return <StoreLoadState slug={slug} loading={loading} error={loadError} />;
+    return <StoreLoadState loading={loading} error={loadError} />;
   }
   if (!store) return null;
+
+  const buyPath = (network: string) =>
+    mainDomain ? buildStoreBuyPath(slug, network) : `/store/${slug}/buy/${encodeURIComponent(network)}`;
 
 
 
@@ -91,7 +117,12 @@ export default function StoreHomePage() {
 
   return (
 
-    <StoreLayout store={store} activeTab={activeTab} onTabChange={setActiveTab}>
+    <StoreLayout
+      store={store}
+      activeTab={activeTab}
+      onTabChange={handleTabChange}
+      brandName={mainDomain ? PLATFORM_NAME : undefined}
+    >
 
       {activeTab === 'home' && (
 
@@ -103,7 +134,9 @@ export default function StoreHomePage() {
 
             <div className="max-w-6xl mx-auto px-4 text-center relative z-10">
 
-              <h1 className="text-2xl sm:text-3xl lg:text-5xl font-bold text-white mb-4">{store.storeName}</h1>
+              <h1 className="text-2xl sm:text-3xl lg:text-5xl font-bold text-white mb-4">
+                {mainDomain ? PLATFORM_NAME : store.storeName}
+              </h1>
 
               <p className="text-lg text-gray-400 mb-8 max-w-xl mx-auto">
 
@@ -183,7 +216,7 @@ export default function StoreHomePage() {
 
                     service.isAvailable ? (
 
-                      <Link to={`/store/${slug}/buy/${encodeURIComponent(service.network)}`} className="w-full">
+                      <Link to={buyPath(service.network)} className="w-full">
 
                         <Button className="w-full" size="sm">View Plans</Button>
 
@@ -284,19 +317,21 @@ export default function StoreHomePage() {
 
             />
 
-            <a
+            <div className="mt-6">
 
-              href={`tel:${store.phone}`}
+              <StoreContactLinks
 
-              className="inline-flex items-center justify-center gap-2 mt-6 px-6 py-3 rounded-full bg-gold text-navy font-semibold hover:bg-gold-hover transition"
+                phone={store.phone}
 
-            >
+                whatsapp={store.whatsapp}
 
-              <Phone className="w-4 h-4" />
+                storeName={store.storeName}
 
-              Call {store.phone}
+                layout="stacked"
 
-            </a>
+              />
+
+            </div>
 
           </div>
 

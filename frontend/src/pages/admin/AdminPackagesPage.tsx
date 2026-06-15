@@ -3,30 +3,53 @@ import { useAuth } from '@/lib/auth-context';
 import { api } from '@/lib/api';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { Card } from '@/components/ui/Card';
+import {
+  PanelTable,
+  PanelTableHeader,
+  PanelTableScroll,
+  panelTableHeadClass,
+  panelTableTh,
+  panelTableRowClass,
+  panelTableCellClass,
+} from '@/components/ui/PanelTable';
 import Button from '@/components/ui/Button';
-import { formatCurrency } from '@/lib/utils';
+import { cn, formatCurrency } from '@/lib/utils';
+import { computeResellerProfit, formatProfitRange } from '@/lib/reseller-profit';
 import { useNavigate } from 'react-router-dom';
-import { Loader2, RefreshCw, Save } from 'lucide-react';
+import { Loader2, Plus, RefreshCw, Save } from 'lucide-react';
+import NetworkStockBar, { NetworkStockRow } from '@/components/network/NetworkStockBar';
+import AdminAddPackageModal from '@/components/admin/AdminAddPackageModal';
 
 type PackageRow = {
   _id: string;
   network: string;
   bundleSize: string;
   costPrice: number;
-  dealerPrice: number;
+  AgentPrice: number;
   resellerBasePrice: number;
   maxSellingPrice: number;
   isEnabled: boolean;
 };
 
+type ApiPackageRow = PackageRow & { agentPrice?: number };
+
+function normalizePackage(p: ApiPackageRow): PackageRow {
+  return {
+    ...p,
+    AgentPrice: p.AgentPrice ?? p.agentPrice ?? 0,
+  };
+}
+
 type PriceDraft = {
-  dealerPrice: string;
+  costPrice: string;
+  AgentPrice: string;
   resellerBasePrice: string;
   maxSellingPrice: string;
 };
 
 const emptyDraft = (): PriceDraft => ({
-  dealerPrice: '',
+  costPrice: '',
+  AgentPrice: '',
   resellerBasePrice: '',
   maxSellingPrice: '',
 });
@@ -36,7 +59,8 @@ function draftsFromPackages(list: PackageRow[]): Record<string, PriceDraft> {
     list.map((p) => [
       p._id,
       {
-        dealerPrice: String(p.dealerPrice),
+        costPrice: String(p.costPrice),
+        AgentPrice: String(p.AgentPrice),
         resellerBasePrice: String(p.resellerBasePrice),
         maxSellingPrice: String(p.maxSellingPrice),
       },
@@ -46,7 +70,8 @@ function draftsFromPackages(list: PackageRow[]): Record<string, PriceDraft> {
 
 function draftChanged(pkg: PackageRow, draft: PriceDraft) {
   return (
-    parseFloat(draft.dealerPrice) !== pkg.dealerPrice ||
+    parseFloat(draft.costPrice) !== pkg.costPrice ||
+    parseFloat(draft.AgentPrice) !== pkg.AgentPrice ||
     parseFloat(draft.resellerBasePrice) !== pkg.resellerBasePrice ||
     parseFloat(draft.maxSellingPrice) !== pkg.maxSellingPrice
   );
@@ -63,6 +88,9 @@ export default function AdminPackagesPage() {
   const [savingId, setSavingId] = useState<string | null>(null);
   const [savedId, setSavedId] = useState<string | null>(null);
   const [error, setError] = useState('');
+  const [networkStock, setNetworkStock] = useState<NetworkStockRow[]>([]);
+  const [stockToggling, setStockToggling] = useState<string | null>(null);
+  const [showAddModal, setShowAddModal] = useState(false);
 
   useEffect(() => {
     if (!loading && (!user || user.role !== 'admin')) navigate('/login/admin');
@@ -72,10 +100,14 @@ export default function AdminPackagesPage() {
     setPageLoading(true);
     setError('');
     try {
-      const res = await api.get('/admin/packages');
-      const list = res.data.data as PackageRow[];
+      const [pkgRes, stockRes] = await Promise.all([
+        api.get('/admin/packages'),
+        api.get('/admin/network-stock'),
+      ]);
+      const list = (pkgRes.data.data as ApiPackageRow[]).map(normalizePackage);
       setPackages(list);
       setDrafts(draftsFromPackages(list));
+      setNetworkStock(stockRes.data.data as NetworkStockRow[]);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load packages');
       setPackages([]);
@@ -94,7 +126,7 @@ export default function AdminPackagesPage() {
     setError('');
     try {
       const res = await api.post('/admin/packages/seed');
-      const list = res.data.data as PackageRow[];
+      const list = (res.data.data as ApiPackageRow[]).map(normalizePackage);
       setPackages(list);
       setDrafts(draftsFromPackages(list));
     } catch (err) {
@@ -119,7 +151,8 @@ export default function AdminPackagesPage() {
     setError('');
     try {
       await api.patch(`/admin/packages/${pkg._id}/prices`, {
-        dealerPrice: parseFloat(draft.dealerPrice),
+        costPrice: parseFloat(draft.costPrice),
+        agentPrice: parseFloat(draft.AgentPrice),
         resellerBasePrice: parseFloat(draft.resellerBasePrice),
         maxSellingPrice: parseFloat(draft.maxSellingPrice),
       });
@@ -128,7 +161,8 @@ export default function AdminPackagesPage() {
           p._id === pkg._id
             ? {
                 ...p,
-                dealerPrice: parseFloat(draft.dealerPrice),
+                costPrice: parseFloat(draft.costPrice),
+                AgentPrice: parseFloat(draft.AgentPrice),
                 resellerBasePrice: parseFloat(draft.resellerBasePrice),
                 maxSellingPrice: parseFloat(draft.maxSellingPrice),
               }
@@ -141,6 +175,19 @@ export default function AdminPackagesPage() {
       setError(err instanceof Error ? err.message : 'Failed to save prices');
     } finally {
       setSavingId(null);
+    }
+  };
+
+  const toggleStock = async (network: string, inStock: boolean) => {
+    setStockToggling(network);
+    setError('');
+    try {
+      const res = await api.patch(`/admin/network-stock/${network}`, { inStock });
+      setNetworkStock(res.data.data as NetworkStockRow[]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update stock');
+    } finally {
+      setStockToggling(null);
     }
   };
 
@@ -164,10 +211,14 @@ export default function AdminPackagesPage() {
         <div>
           <h1 className="text-xl sm:text-2xl font-bold text-white mb-1">Data Packages</h1>
           <p className="text-sm text-gray-400">
-            Edit dealer &amp; reseller prices anytime — changes apply to all dealers and resellers.
+            Edit Smart Data API cost, Agent &amp; reseller prices anytime — admin profit updates live.
           </p>
         </div>
         <div className="flex gap-2 shrink-0">
+          <Button size="sm" onClick={() => setShowAddModal(true)}>
+            <Plus className="w-4 h-4 mr-1" />
+            Add package
+          </Button>
           <Button size="sm" variant="outline" onClick={load} disabled={pageLoading}>
             <RefreshCw className="w-4 h-4 mr-1" />
             Refresh
@@ -178,6 +229,15 @@ export default function AdminPackagesPage() {
       {error && (
         <p className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 p-3 rounded-lg mb-4">{error}</p>
       )}
+
+      <Card className="p-4 mb-4">
+        <h2 className="text-sm font-semibold text-gray-900 mb-3">Network stock</h2>
+        <NetworkStockBar
+          stock={networkStock}
+          onToggle={toggleStock}
+          togglingNetwork={stockToggling}
+        />
+      </Card>
 
       <div className="flex gap-2 mb-4 flex-wrap">
         <Button size="sm" variant={!filter ? 'primary' : 'outline'} onClick={() => setFilter('')}>All</Button>
@@ -200,39 +260,69 @@ export default function AdminPackagesPage() {
           </Button>
         </Card>
       ) : (
-        <Card className="overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm min-w-[980px]">
-              <thead className="bg-gray-50 border-b border-gray-100">
-                <tr>
-                  <th className="text-left px-4 py-3 text-gray-500 font-medium">Network</th>
-                  <th className="text-left px-4 py-3 text-gray-500 font-medium">Bundle</th>
-                  <th className="text-left px-4 py-3 text-gray-500 font-medium">Cost</th>
-                  <th className="text-left px-4 py-3 text-amber-700 font-medium">Dealer (GHS)</th>
-                  <th className="text-left px-4 py-3 text-blue-700 font-medium">Reseller Base (GHS)</th>
-                  <th className="text-left px-4 py-3 text-blue-700 font-medium">Max Sell (GHS)</th>
-                  <th className="text-left px-4 py-3 text-gray-500 font-medium">Status</th>
-                  <th className="text-left px-4 py-3 text-gray-500 font-medium">Save</th>
-                </tr>
-              </thead>
-              <tbody>
+        <PanelTable>
+          <PanelTableHeader
+            title={filter || 'All networks'}
+            subtitle="Agent price applies to Buy Data and Bulk Purchase — save each row after editing"
+            trailing={`${filtered.length} bundles`}
+          />
+          <PanelTableScroll minWidth={1100}>
+            <thead className={panelTableHeadClass}>
+              <tr>
+                <th className={panelTableTh()}>Network</th>
+                <th className={panelTableTh()}>Bundle</th>
+                <th className={panelTableTh()}>API cost (Smart Data)</th>
+                <th className={panelTableTh('amber')}>Agent (GHS)</th>
+                <th className={panelTableTh('blue')}>Reseller Base (GHS)</th>
+                <th className={panelTableTh('blue')}>Max Sell (GHS)</th>
+                <th className={panelTableTh('violet')}>Admin profit</th>
+                <th className={panelTableTh('emerald')}>Reseller profit (max)</th>
+                <th className={panelTableTh()}>Status</th>
+                <th className={panelTableTh()}>Save</th>
+              </tr>
+            </thead>
+            <tbody>
                 {filtered.map((p) => {
                   const draft = drafts[p._id] || emptyDraft();
                   const changed = draftChanged(p, draft);
                   const isSaving = savingId === p._id;
                   const justSaved = savedId === p._id;
+                  const apiCost = parseFloat(draft.costPrice);
+                  const base = parseFloat(draft.resellerBasePrice);
+                  const Agent = parseFloat(draft.AgentPrice);
+                  const maxSell = parseFloat(draft.maxSellingPrice);
+                  const adminProfitStore =
+                    Number.isFinite(base) && Number.isFinite(apiCost)
+                      ? formatCurrency(Math.max(0, base - apiCost))
+                      : '—';
+                  const adminProfitAgent =
+                    Number.isFinite(Agent) && Number.isFinite(apiCost)
+                      ? formatCurrency(Math.max(0, Agent - apiCost))
+                      : '—';
+                  const profitRange = Number.isFinite(base) && Number.isFinite(maxSell)
+                    ? formatProfitRange(0, computeResellerProfit(maxSell, base))
+                    : '—';
                   return (
-                    <tr key={p._id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50/50">
-                      <td className="px-4 py-3 font-medium text-gray-900">{p.network}</td>
-                      <td className="px-4 py-3 text-gray-900">{p.bundleSize}</td>
-                      <td className="px-4 py-3 text-gray-600">{formatCurrency(p.costPrice)}</td>
+                    <tr key={p._id} className={panelTableRowClass}>
+                      <td className={cn(panelTableCellClass, 'font-medium text-gray-900')}>{p.network}</td>
+                      <td className={cn(panelTableCellClass, 'text-gray-900')}>{p.bundleSize}</td>
+                      <td className={panelTableCellClass}>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={draft.costPrice}
+                          onChange={(e) => updateDraft(p._id, 'costPrice', e.target.value)}
+                          className="w-28 px-2 py-1.5 rounded-lg border border-gray-300 bg-gray-50 text-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400/50"
+                        />
+                      </td>
                       <td className="px-4 py-3">
                         <input
                           type="number"
                           step="0.01"
                           min="0"
-                          value={draft.dealerPrice}
-                          onChange={(e) => updateDraft(p._id, 'dealerPrice', e.target.value)}
+                          value={draft.AgentPrice}
+                          onChange={(e) => updateDraft(p._id, 'AgentPrice', e.target.value)}
                           className="w-28 px-2 py-1.5 rounded-lg border border-amber-300 bg-amber-50/50 text-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400/50"
                         />
                       </td>
@@ -255,6 +345,15 @@ export default function AdminPackagesPage() {
                           onChange={(e) => updateDraft(p._id, 'maxSellingPrice', e.target.value)}
                           className="w-28 px-2 py-1.5 rounded-lg border border-blue-300 bg-blue-50/50 text-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/50"
                         />
+                      </td>
+                      <td className="px-4 py-3 text-violet-700 text-xs font-medium whitespace-nowrap">
+                        {adminProfitStore}
+                        <span className="block text-[10px] text-gray-400 font-normal">store: base − API</span>
+                        <span className="block text-[10px] text-gray-500">{adminProfitAgent} Agent</span>
+                      </td>
+                      <td className="px-4 py-3 text-emerald-700 text-xs font-medium whitespace-nowrap">
+                        {profitRange}
+                        <span className="block text-[10px] text-gray-400 font-normal">max sell − base</span>
                       </td>
                       <td className="px-4 py-3">
                         <button
@@ -288,9 +387,12 @@ export default function AdminPackagesPage() {
                   );
                 })}
               </tbody>
-            </table>
-          </div>
-        </Card>
+          </PanelTableScroll>
+        </PanelTable>
+      )}
+
+      {showAddModal && (
+        <AdminAddPackageModal onClose={() => setShowAddModal(false)} onSuccess={load} />
       )}
     </DashboardLayout>
   );

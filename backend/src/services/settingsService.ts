@@ -15,18 +15,63 @@ export interface ComplaintOrderContext {
   createdAt: Date;
 }
 
+const defaultFulfillmentSettings = () => ({
+  enabled: true,
+  networkRouting: {
+    MTN: false,
+    Telecel: false,
+    AirtelTigo: false,
+  },
+});
+
+const defaultComplaintSettings = () => ({
+  globalEnabled: true,
+  networkSettings: {
+    MTN: true,
+    Telecel: true,
+    AirtelTigo: true,
+  },
+  userOverrides: new Map<string, boolean>(),
+  noticeOverridesComplaints: false,
+});
+
 export const getSettings = async () => {
   let settings = await Setting.findOne();
   if (!settings) {
     settings = await Setting.create({
+      fulfillmentSettings: defaultFulfillmentSettings(),
+      complaintSettings: defaultComplaintSettings(),
       serviceImages: [
         { network: 'MTN', imageUrl: '/images/mtn.jpg', isAvailable: true },
         { network: 'Telecel', imageUrl: '/images/telecel.jpg', isAvailable: true },
         { network: 'AirtelTigo', imageUrl: '/images/airteltigo.jpg', isAvailable: true },
       ],
     });
+    return settings;
   }
+
+  let dirty = false;
+  if (!settings.fulfillmentSettings?.networkRouting) {
+    settings.fulfillmentSettings = defaultFulfillmentSettings();
+    dirty = true;
+  }
+  if (!settings.complaintSettings) {
+    settings.complaintSettings = defaultComplaintSettings() as typeof settings.complaintSettings;
+    dirty = true;
+  } else if (!settings.complaintSettings.userOverrides) {
+    settings.complaintSettings.userOverrides = new Map();
+    dirty = true;
+  }
+  if (dirty) await settings.save();
+
   return settings;
+};
+
+export const isFulfillmentRoutingEnabledForNetwork = async (network: string): Promise<boolean> => {
+  const settings = await getSettings();
+  if (!settings.fulfillmentSettings?.enabled) return false;
+  const key = network as Network;
+  return Boolean(settings.fulfillmentSettings.networkRouting?.[key]);
 };
 
 export const isComplaintsEnabledForUser = async (userId: string): Promise<boolean> => {
@@ -58,10 +103,6 @@ export const canSubmitComplaint = async (
   const userOverride = settings.complaintSettings.userOverrides.get(userId);
   if (userOverride === false) {
     return { allowed: false, reason: 'Complaints disabled for your account', hoursSinceOrder };
-  }
-
-  if (order.status === 'delivered') {
-    return { allowed: false, reason: 'Data already received — no complaint needed', hoursSinceOrder };
   }
 
   if (['refunded', 'cancelled'].includes(order.status)) {
@@ -118,19 +159,19 @@ export const debitWithdrawalPool = async (amount: number) => {
 
 export const validatePackagePrices = (prices: {
   costPrice?: number;
-  dealerPrice?: number;
+  agentPrice?: number;
   resellerBasePrice?: number;
   maxSellingPrice?: number;
 }) => {
-  const { costPrice, dealerPrice, resellerBasePrice, maxSellingPrice } = prices;
-  const fields = [costPrice, dealerPrice, resellerBasePrice, maxSellingPrice].filter((v) => v !== undefined);
+  const { costPrice, agentPrice, resellerBasePrice, maxSellingPrice } = prices;
+  const fields = [costPrice, agentPrice, resellerBasePrice, maxSellingPrice].filter((v) => v !== undefined);
   if (fields.some((v) => typeof v !== 'number' || v <= 0)) {
     throw new AppError('All prices must be positive numbers');
   }
-  if (costPrice !== undefined && dealerPrice !== undefined && dealerPrice < costPrice) {
+  if (costPrice !== undefined && agentPrice !== undefined && agentPrice < costPrice) {
     throw new AppError('Dealer price cannot be below cost price');
   }
-  if (dealerPrice !== undefined && resellerBasePrice !== undefined && resellerBasePrice < dealerPrice) {
+  if (agentPrice !== undefined && resellerBasePrice !== undefined && resellerBasePrice < agentPrice) {
     throw new AppError('Reseller base price must be at least the dealer price');
   }
   if (resellerBasePrice !== undefined && maxSellingPrice !== undefined && maxSellingPrice < resellerBasePrice) {

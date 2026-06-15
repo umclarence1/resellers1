@@ -7,6 +7,8 @@ import { fulfillStorePurchase } from './orderService';
 import { createNotification } from './notificationService';
 import { depositWithdrawalPool } from './settingsService';
 import { roundMoney } from '../utils/helpers';
+import { withMongoTransaction } from '../utils/mongoTransaction';
+import { appendAuditLog } from './immutableAuditService';
 
 export type PaystackFulfillmentResult =
   | { type: 'wallet_deposit'; alreadyProcessed: boolean }
@@ -18,8 +20,14 @@ function validatePaidAmount(
   metadata: Record<string, unknown>,
   paidAmountGhs?: number
 ): void {
+  if (paidAmountGhs === undefined || !Number.isFinite(paidAmountGhs)) {
+    throw new Error('Paid amount missing from payment provider');
+  }
+
   const expected = Number(metadata.expectedTotal ?? metadata.depositAmount);
-  if (!expected || paidAmountGhs === undefined) return;
+  if (!expected || !Number.isFinite(expected)) {
+    throw new Error('Payment metadata missing expected amount');
+  }
 
   if (Math.abs(roundMoney(expected) - roundMoney(paidAmountGhs)) > 0.02) {
     throw new Error(
@@ -46,23 +54,39 @@ export async function processPaystackSuccess(
   validatePaidAmount(metadata, paidAmount);
 
   if (metadata.type === 'wallet_deposit' && metadata.userId && metadata.depositAmount) {
-    const existing = await WalletTransaction.findOne({ reference, type: 'deposit' });
+    const existing = await WalletTransaction.findOne({
+      reference,
+      type: 'deposit',
+      description: { $ne: '__reserved__' },
+      amount: { $gt: 0 },
+    });
     if (existing) {
       return { type: 'wallet_deposit', alreadyProcessed: true };
     }
 
     const depositAmount = Number(metadata.depositAmount);
-    await creditWallet(
-      String(metadata.userId),
-      depositAmount,
-      'deposit',
-      `Wallet deposit of GHS ${depositAmount}`,
-      reference,
-      {
-        paystackCharge: metadata.paystackCharge,
-        totalPaid: paidAmount,
-      }
-    );
+    await withMongoTransaction(async (session) => {
+      await creditWallet(
+        String(metadata.userId),
+        depositAmount,
+        'deposit',
+        `Wallet deposit of GHS ${depositAmount}`,
+        reference,
+        {
+          paystackCharge: metadata.paystackCharge,
+          totalPaid: paidAmount,
+        },
+        session
+      );
+
+      await appendAuditLog({
+        userId: String(metadata.userId),
+        action: 'wallet_adjustment',
+        entity: 'wallet',
+        entityId: reference,
+        details: { type: 'deposit', amount: depositAmount },
+      });
+    });
 
     await createNotification(
       String(metadata.userId),

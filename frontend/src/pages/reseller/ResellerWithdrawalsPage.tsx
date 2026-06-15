@@ -102,6 +102,7 @@ export default function ResellerWithdrawalsPage() {
             )}
             <p className="text-xs text-gray-500 mt-2">
               You can only withdraw verified earnings. Amount is locked when you submit a request.
+              Approved withdrawals are paid to your MoMo via Paystack.
             </p>
           </div>
         </div>

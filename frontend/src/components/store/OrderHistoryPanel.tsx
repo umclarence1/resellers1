@@ -84,6 +84,9 @@ export default function OrderHistoryPanel({ slug, storeName }: { slug: string; s
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [resending, setResending] = useState(false);
+  const [resendMessage, setResendMessage] = useState('');
+  const [resendCooldown, setResendCooldown] = useState(0);
   const verifyingRef = useRef(false);
   const otpWrapRef = useRef<HTMLDivElement>(null);
 
@@ -96,6 +99,12 @@ export default function OrderHistoryPanel({ slug, storeName }: { slug: string; s
     }
   }, [step]);
 
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const timer = window.setTimeout(() => setResendCooldown((s) => s - 1), 1000);
+    return () => window.clearTimeout(timer);
+  }, [resendCooldown]);
+
   const resetFlow = () => {
     setStep('identify');
     setEmail('');
@@ -104,6 +113,8 @@ export default function OrderHistoryPanel({ slug, storeName }: { slug: string; s
     setOtp(['', '', '', '', '', '']);
     setOrders([]);
     setError('');
+    setResendMessage('');
+    setResendCooldown(0);
     verifyingRef.current = false;
   };
 
@@ -158,16 +169,20 @@ export default function OrderHistoryPanel({ slug, storeName }: { slug: string; s
   );
 
   const resendCode = async () => {
+    if (resending || resendCooldown > 0 || loading) return;
+    setResending(true);
     setError('');
-    setLoading(true);
+    setResendMessage('');
     verifyingRef.current = false;
     try {
       await api.post(`/store/${slug}/history/request`, { email: email.trim() });
+      setResendMessage('A new code has been sent. Check your inbox and spam folder.');
+      setResendCooldown(30);
       setOtp(['', '', '', '', '', '']);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not resend code');
     } finally {
-      setLoading(false);
+      setResending(false);
     }
   };
 
@@ -253,15 +268,24 @@ export default function OrderHistoryPanel({ slug, storeName }: { slug: string; s
             {error && (
               <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-xl px-4 py-3 mt-4 text-center">{error}</p>
             )}
+            {resendMessage && (
+              <p className="text-sm text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-xl px-4 py-3 mt-4 text-center">
+                {resendMessage}
+              </p>
+            )}
 
             <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mt-6 text-sm">
               <button
                 type="button"
                 onClick={resendCode}
-                disabled={loading}
+                disabled={loading || resending || resendCooldown > 0}
                 className="text-amber-700 hover:text-amber-900 font-medium disabled:opacity-50"
               >
-                Resend code
+                {resending
+                  ? 'Sending...'
+                  : resendCooldown > 0
+                    ? `Resend code (${resendCooldown}s)`
+                    : 'Resend code'}
               </button>
               <span className="hidden sm:inline text-gray-300">|</span>
               <button

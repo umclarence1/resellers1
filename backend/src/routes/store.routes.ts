@@ -9,9 +9,25 @@ import { getSettings } from '../services/settingsService';
 import { initializePayment } from '../utils/paystack';
 import { createOrder } from '../services/orderService';
 import { isValidGhanaPhone, roundMoney } from '../utils/helpers';
+import { assertNetworkInStock } from '../services/networkStockService';
 import { env } from '../config/env';
-import { otpLimiter } from '../middleware/rateLimiter';
-import { requestOrderHistoryOtp, verifyOrderHistoryOtp } from '../services/orderHistoryService';
+import { otpLimiter, purchaseLimiter } from '../middleware/rateLimiter';
+import { rejectFields } from '../middleware/rejectFields';
+
+const blockStorePricing = rejectFields(
+  'sellingPrice',
+  'costPrice',
+  'totalAmount',
+  'profit',
+  'processingFee',
+  'expectedTotal'
+);
+import {
+  requestOrderHistoryOtp,
+  requestOrderHistoryOtpByPhone,
+  verifyOrderHistoryOtp,
+  verifyOrderHistoryOtpByPhone,
+} from '../services/orderHistoryService';
 
 const router = Router();
 
@@ -19,12 +35,13 @@ const router = Router();
 router.get('/:slug', asyncHandler(async (req, res) => {
   const reseller = await User.findOne({
     'resellerStore.slug': req.params.slug,
-    'resellerStore.isActive': true,
     role: 'reseller',
-    status: 'active',
   }).select('-password');
 
   if (!reseller?.resellerStore) throw new AppError('Store not found', 404);
+  if (!reseller.resellerStore.isActive || reseller.status !== 'active') {
+    throw new AppError('This store is currently unavailable', 403);
+  }
 
   const settings = await getSettings();
 
@@ -76,6 +93,8 @@ router.get('/:slug/packages/:network', asyncHandler(async (req, res) => {
   if (!reseller) throw new AppError('Store not found', 404);
 
   const network = decodeURIComponent(req.params.network as string) as Network;
+  await assertNetworkInStock(network);
+
   const packages = await Package.find({
     network,
     isEnabled: true,
@@ -114,7 +133,7 @@ router.get('/:slug/faqs', asyncHandler(async (_req, res) => {
 }));
 
 // Initialize customer purchase
-router.post('/:slug/purchase/init', asyncHandler(async (req, res) => {
+router.post('/:slug/purchase/init', purchaseLimiter, blockStorePricing, asyncHandler(async (req, res) => {
   const { packageId, recipientPhone, email } = req.body;
 
   if (!packageId || !recipientPhone || !email) {
@@ -204,7 +223,39 @@ router.post(
     if (!email?.trim() || !code) throw new AppError('Email and verification code are required');
 
     const orders = await verifyOrderHistoryOtp(req.params.slug as string, email, String(code));
-    res.json({ success: true, data: { orders } });
+    res.json({ success: true, data: orders });
+  })
+);
+
+router.post(
+  '/:slug/history/request-phone',
+  otpLimiter,
+  asyncHandler(async (req, res) => {
+    const { phone } = req.body;
+    if (!phone?.trim()) throw new AppError('Phone number is required');
+
+    const result = await requestOrderHistoryOtpByPhone(req.params.slug as string, phone);
+    res.json({
+      success: true,
+      message: `Verification code sent to ${result.maskedEmail}`,
+      data: result,
+    });
+  })
+);
+
+router.post(
+  '/:slug/history/verify-phone',
+  otpLimiter,
+  asyncHandler(async (req, res) => {
+    const { phone, code } = req.body;
+    if (!phone?.trim() || !code) throw new AppError('Phone and verification code are required');
+
+    const result = await verifyOrderHistoryOtpByPhone(
+      req.params.slug as string,
+      phone,
+      String(code)
+    );
+    res.json({ success: true, data: result });
   })
 );
 

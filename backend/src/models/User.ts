@@ -1,6 +1,6 @@
 import mongoose, { Document, Schema } from 'mongoose';
 
-export type UserRole = 'admin' | 'dealer' | 'reseller';
+export type UserRole = 'admin' | 'agent' | 'reseller';
 export type UserStatus = 'active' | 'suspended' | 'pending';
 
 export interface IResellerStore {
@@ -16,9 +16,11 @@ export interface IResellerStore {
   customPrices: Map<string, number>;
 }
 
-export interface IDealerApi {
+export interface IAgentApi {
   apiKey: string;
-  secretKey: string;
+  /** @deprecated Plaintext secrets are migrated to secretKeyHash — never returned via API */
+  secretKey?: string;
+  secretKeyHash?: string;
   ipWhitelist: string[];
   webhookUrl?: string;
   isActive: boolean;
@@ -32,8 +34,14 @@ export interface IUser extends Document {
   role: UserRole;
   status: UserStatus;
   resellerStore?: IResellerStore;
-  dealerApi?: IDealerApi;
+  agentApi?: IAgentApi;
   complaintEnabled: boolean;
+  isSuperAdmin?: boolean;
+  totpEnabled: boolean;
+  totpSecretEnc?: string;
+  tokenVersion: number;
+  failedLoginAttempts: number;
+  loginLockedUntil?: Date;
   lastLogin?: Date;
   createdAt: Date;
   updatedAt: Date;
@@ -55,10 +63,11 @@ const resellerStoreSchema = new Schema<IResellerStore>(
   { _id: false }
 );
 
-const dealerApiSchema = new Schema<IDealerApi>(
+const agentApiSchema = new Schema<IAgentApi>(
   {
     apiKey: { type: String, required: true },
-    secretKey: { type: String, required: true },
+    secretKey: { type: String, select: false },
+    secretKeyHash: { type: String, select: false },
     ipWhitelist: { type: [String], default: [] },
     webhookUrl: String,
     isActive: { type: Boolean, default: true },
@@ -72,11 +81,17 @@ const userSchema = new Schema<IUser>(
     email: { type: String, required: true, unique: true, lowercase: true, trim: true },
     phone: { type: String, required: true, trim: true },
     password: { type: String, required: true },
-    role: { type: String, enum: ['admin', 'dealer', 'reseller'], required: true },
+    role: { type: String, enum: ['admin', 'agent', 'reseller'], required: true },
     status: { type: String, enum: ['active', 'suspended', 'pending'], default: 'active' },
     resellerStore: resellerStoreSchema,
-    dealerApi: dealerApiSchema,
+    agentApi: agentApiSchema,
     complaintEnabled: { type: Boolean, default: true },
+    isSuperAdmin: { type: Boolean, default: false },
+    totpEnabled: { type: Boolean, default: false },
+    totpSecretEnc: { type: String, select: false },
+    tokenVersion: { type: Number, default: 0 },
+    failedLoginAttempts: { type: Number, default: 0 },
+    loginLockedUntil: Date,
     lastLogin: Date,
   },
   { timestamps: true }
@@ -85,5 +100,6 @@ const userSchema = new Schema<IUser>(
 userSchema.index({ 'resellerStore.slug': 1 }, { unique: true, sparse: true });
 userSchema.index({ 'resellerStore.referralCode': 1 }, { unique: true, sparse: true });
 userSchema.index({ role: 1, status: 1 });
+userSchema.index({ role: 1, 'resellerStore.isActive': 1 });
 
 export const User = mongoose.model<IUser>('User', userSchema);

@@ -1,6 +1,8 @@
 import axios from 'axios';
 import crypto from 'crypto';
 import { env } from '../config/env';
+import { AppError } from '../middleware/errorHandler';
+import { secureCompare } from './secureCompare';
 
 const paystackApi = axios.create({
   baseURL: 'https://api.paystack.co',
@@ -16,34 +18,83 @@ export interface PaystackInitResponse {
   reference: string;
 }
 
+function paystackFailureMessage(err: unknown, fallback: string): string {
+  if (axios.isAxiosError(err)) {
+    const message = err.response?.data?.message;
+    if (typeof message === 'string' && message.trim()) return message;
+  }
+  return fallback;
+}
+
 export const initializePayment = async (
   email: string,
   amountInPesewas: number,
   metadata: Record<string, unknown>
 ): Promise<PaystackInitResponse> => {
-  const { data } = await paystackApi.post('/transaction/initialize', {
-    email,
-    amount: amountInPesewas,
-    currency: 'GHS',
-    callback_url: `${env.frontendUrl}/payment/callback`,
-    metadata,
-  });
+  if (!env.paystack.secretKey) {
+    throw new AppError('Paystack is not configured. Contact support.', 503);
+  }
 
-  return data.data;
+  try {
+    const payload: Record<string, unknown> = {
+      email,
+      amount: amountInPesewas,
+      currency: 'GHS',
+      callback_url: `${env.frontendUrl}/payment/callback`,
+      metadata,
+    };
+    if (typeof metadata.reference === 'string' && metadata.reference.trim()) {
+      payload.reference = metadata.reference.trim();
+    }
+
+    const { data } = await paystackApi.post('/transaction/initialize', payload);
+
+    if (!data?.status || !data?.data?.authorization_url) {
+      throw new AppError(data?.message || 'Paystack could not start this payment', 502);
+    }
+
+    return data.data;
+  } catch (err) {
+    if (err instanceof AppError) throw err;
+    throw new AppError(paystackFailureMessage(err, 'Paystack payment could not be started'), 502);
+  }
 };
 
 export const verifyPayment = async (reference: string) => {
-  const { data } = await paystackApi.get(`/transaction/verify/${reference}`);
-  return data.data;
+  try {
+    const { data } = await paystackApi.get(`/transaction/verify/${encodeURIComponent(reference)}`);
+    if (!data?.status || !data?.data) {
+      throw new AppError(data?.message || 'Could not verify payment with Paystack', 502);
+    }
+    return data.data;
+  } catch (err) {
+    if (err instanceof AppError) throw err;
+    throw new AppError(paystackFailureMessage(err, 'Could not verify payment with Paystack'), 502);
+  }
 };
 
 export const verifyWebhookSignature = (payload: string, signature: string): boolean => {
+  if (!env.paystack.secretKey || !signature) return false;
   const hash = crypto
     .createHmac('sha512', env.paystack.secretKey)
     .update(payload)
     .digest('hex');
-  return hash === signature;
+  return secureCompare(hash, signature);
 };
+
+const PAYSTACK_HOSTS = new Set(['checkout.paystack.com', 'paystack.com', 'standard.paystack.com']);
+
+export function assertPaystackCheckoutUrl(url: string): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new AppError('Invalid payment redirect URL', 502);
+  }
+  if (parsed.protocol !== 'https:' || !PAYSTACK_HOSTS.has(parsed.hostname)) {
+    throw new AppError('Untrusted payment redirect URL', 502);
+  }
+}
 
 export const calculatePaystackCharge = (amount: number, chargePercent: number): number => {
   return Math.round(amount * (chargePercent / 100) * 100) / 100;
