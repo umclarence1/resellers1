@@ -59,8 +59,9 @@ if ([string]::IsNullOrWhiteSpace($agentPassword)) { $agentPassword = 'Agent@1234
 
 Set-VercelEnv 'NODE_ENV' 'production'
 Set-VercelEnv 'DEV_SKIP_OTP' 'false'
-Set-VercelEnv 'FRONTEND_URL' 'https://resellers1.vercel.app'
+Set-VercelEnv 'FRONTEND_URL' 'https://www.topdealsgh.com'
 Set-VercelEnv 'API_URL' 'https://backend-snowy-eight-68.vercel.app'
+Set-VercelEnv 'CORS_ORIGINS' 'https://www.topdealsgh.com,http://www.topdealsgh.com,https://topdealsgh.com,http://topdealsgh.com,https://resellers1.vercel.app'
 Set-VercelEnv 'MONGODB_URI' $resellerEnv['MONGODB_URI']
 Set-VercelEnv 'JWT_SECRET' $jwt
 Set-VercelEnv 'REFRESH_TOKEN_SECRET' $refresh

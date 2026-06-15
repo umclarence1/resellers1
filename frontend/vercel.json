@@ -4,7 +4,7 @@
   "framework": "vite",
   "env": {
     "VITE_API_URL": "https://backend-snowy-eight-68.vercel.app/api",
-    "VITE_APP_URL": "https://resellers1.vercel.app"
+    "VITE_APP_URL": "https://www.topdealsgh.com"
   },
   "rewrites": [
     { "source": "/(.*)", "destination": "/index.html" }

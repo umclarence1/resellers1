@@ -16,6 +16,10 @@ export const env = {
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '2h',
   frontendUrl: process.env.FRONTEND_URL || 'http://localhost:3000',
   apiUrl: process.env.API_URL || 'http://localhost:5000',
+  corsOrigins: (process.env.CORS_ORIGINS || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean),
   smtp: {
     host: process.env.SMTP_HOST || 'smtp.gmail.com',
     port: parseInt(process.env.SMTP_PORT || '465', 10),

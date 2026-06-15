@@ -12,7 +12,7 @@ export function isAllowedCorsOrigin(origin: string | undefined): boolean {
     return /^https?:\/\/localhost(:\d+)?$/.test(origin);
   }
 
-  const allowed = [env.frontendUrl, env.apiUrl]
+  const allowed = [env.frontendUrl, env.apiUrl, ...env.corsOrigins]
     .filter(Boolean)
     .map(normalizeOrigin);
 
