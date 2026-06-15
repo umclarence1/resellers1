@@ -11,6 +11,7 @@ import { redirectToPaystack } from '@/lib/paystack';
 import { Loader2, Wallet, Settings, RefreshCw, PlugZap, AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import AdminPasswordConfirm from '@/components/admin/AdminPasswordConfirm';
+import { getApiHostname } from '@/lib/deploy';
 
 type FulfillmentNetwork = 'MTN' | 'Telecel' | 'AirtelTigo';
 
@@ -429,7 +430,7 @@ export default function AdminSettingsPage() {
                 Set <code className="text-xs">FULFILLMENT_API_ENABLED=true</code>,{' '}
                 <code className="text-xs">FULFILLMENT_API_KEY</code>, and{' '}
                 <code className="text-xs">FULFILLMENT_API_SECRET</code> on the server. Whitelist{' '}
-                <code className="text-xs">backend-snowy-eight-68.vercel.app</code> in Smart Data
+                <code className="text-xs">{getApiHostname()}</code> in Smart Data
                 Hub → API Management.
               </p>
             )}

@@ -1,4 +1,11 @@
 {
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "framework": "vite",
+  "env": {
+    "VITE_API_URL": "https://resellers1-api.vercel.app/api",
+    "VITE_APP_URL": "https://resellers1.vercel.app"
+  },
   "rewrites": [
     { "source": "/(.*)", "destination": "/index.html" }
   ],
