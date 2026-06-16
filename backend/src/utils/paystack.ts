@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { env } from '../config/env';
 import { AppError } from '../middleware/errorHandler';
 import { secureCompare } from './secureCompare';
+import { getCanonicalFrontendUrl, paystackPlatformMetadata } from '../config/urls';
 
 const paystackApi = axios.create({
   baseURL: 'https://api.paystack.co',
@@ -40,8 +41,8 @@ export const initializePayment = async (
       email,
       amount: amountInPesewas,
       currency: 'GHS',
-      callback_url: `${env.frontendUrl}/payment/callback`,
-      metadata,
+      callback_url: `${getCanonicalFrontendUrl()}/payment/callback`,
+      metadata: paystackPlatformMetadata(metadata),
     };
     if (typeof metadata.reference === 'string' && metadata.reference.trim()) {
       payload.reference = metadata.reference.trim();

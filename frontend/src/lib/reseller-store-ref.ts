@@ -1,7 +1,11 @@
+import { APP_URL } from './deploy';
+import { CANONICAL_WEBSITE } from './canonical-site';
+
 const STORAGE_KEY = 'reseller_store_ref';
 
-/** Share link on the main domain — reseller earns profit on orders placed via this ref. */
-export function buildResellerStoreUrl(slug: string, origin = typeof window !== 'undefined' ? window.location.origin : '') {
+/** Share link on topdealsgh.com — reseller earns profit on orders placed via this ref. */
+export function buildResellerStoreUrl(slug: string) {
+  const origin = (APP_URL || CANONICAL_WEBSITE).replace(/\/$/, '');
   return `${origin}/?r=${encodeURIComponent(slug)}`;
 }
 

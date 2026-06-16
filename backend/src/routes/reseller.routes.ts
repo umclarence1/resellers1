@@ -21,6 +21,7 @@ import {
 import { upload } from '../middleware/upload';
 import { withdrawalLimiter } from '../middleware/rateLimiter';
 import { env } from '../config/env';
+import { buildStoreShareUrl } from '../config/urls';
 import { getOrderGrowthChart } from '../services/growthChartService';
 import {
   getOrderTracking,
@@ -99,7 +100,7 @@ router.get('/dashboard', asyncHandler(async (req: AuthRequest, res) => {
       requiredCount: pricing.requiredCount,
       networksMissing: pricing.networksMissing,
       canShareLink,
-      storeUrl: canShareLink ? `${env.frontendUrl}/?r=${user!.resellerStore!.slug}` : null,
+      storeUrl: canShareLink ? buildStoreShareUrl(user!.resellerStore!.slug) : null,
     },
   });
 }));
@@ -138,7 +139,7 @@ router.get('/store', asyncHandler(async (req: AuthRequest, res) => {
       networksMissing: pricing.networksMissing,
       networkStock,
       canShareLink,
-      storeUrl: canShareLink ? `${env.frontendUrl}/?r=${user.resellerStore.slug}` : null,
+      storeUrl: canShareLink ? buildStoreShareUrl(user.resellerStore.slug) : null,
     },
   });
 }));
@@ -179,7 +180,7 @@ router.put('/store', asyncHandler(async (req: AuthRequest, res) => {
       requiredCount: pricing.requiredCount,
       networksMissing: pricing.networksMissing,
       canShareLink,
-      storeUrl: canShareLink ? `${env.frontendUrl}/?r=${user.resellerStore.slug}` : null,
+      storeUrl: canShareLink ? buildStoreShareUrl(user.resellerStore.slug) : null,
     },
   });
 }));
