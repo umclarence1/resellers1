@@ -18,7 +18,7 @@ export default function AuthLayout({
 
       <div className="w-full max-w-md relative z-10">
         <div className="text-center mb-8">
-          <div className="mb-6">
+          <div className="mb-6 flex justify-center">
             <BrandLogo size="lg" />
           </div>
           <h1 className="text-xl sm:text-2xl font-bold text-white">{title}</h1>

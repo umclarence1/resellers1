@@ -7,6 +7,7 @@ interface BrandLogoProps {
   size?: 'sm' | 'md' | 'lg';
   className?: string;
   showText?: boolean;
+  textClassName?: string;
 }
 
 const sizeClass = {
@@ -37,17 +38,31 @@ export function LogoImage({
 export function BrandMark({
   className,
   size = 'md',
-  showText = false,
+  showText = true,
+  textClassName,
 }: {
   className?: string;
   size?: 'sm' | 'md' | 'lg';
   showText?: boolean;
+  textClassName?: string;
 }) {
+  const textSize = {
+    sm: 'text-sm sm:text-base',
+    md: 'text-base sm:text-lg',
+    lg: 'text-lg sm:text-xl',
+  }[size];
+
   return (
     <span className={cn('inline-flex items-center gap-2 min-w-0', className)}>
-      <LogoImage size={size} />
+      <LogoImage size={size} className="shrink-0" />
       {showText && (
-        <span className="font-bold text-white tracking-tight truncate">
+        <span
+          className={cn(
+            'font-bold tracking-tight truncate',
+            textSize,
+            textClassName ?? 'text-white'
+          )}
+        >
           topdeals<span className="text-gold">gh</span>
         </span>
       )}
@@ -59,11 +74,12 @@ export default function BrandLogo({
   to = '/',
   size = 'md',
   className,
-  showText = false,
-}: BrandLogoProps) {
+  showText = true,
+  textClassName,
+}: BrandLogoProps & { textClassName?: string }) {
   return (
     <Link to={to} className={cn('inline-flex items-center shrink-0', className)} aria-label={PLATFORM_NAME}>
-      <BrandMark size={size} showText={showText} />
+      <BrandMark size={size} showText={showText} textClassName={textClassName} />
     </Link>
   );
 }
