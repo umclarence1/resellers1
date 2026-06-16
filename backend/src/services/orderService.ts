@@ -124,7 +124,7 @@ export const createOrder = async (input: CreateOrderInput) => {
 
   const processingFee =
     input.processingFee ??
-    roundMoney(sellingPrice * (settings.processingFeePercent / 100));
+    roundMoney(sellingPrice * ((settings.paystackChargePercent ?? 2) / 100));
   const totalAmount = roundMoney(sellingPrice + processingFee);
 
   const adminBasePrice = getAdminBasePrice(input.source, {

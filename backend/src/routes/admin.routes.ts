@@ -794,7 +794,7 @@ router.get('/settings', asyncHandler(async (_req, res) => {
   res.json({
     success: true,
     data: {
-      processingFeePercent: settings.processingFeePercent ?? 2,
+      processingFeePercent: settings.paystackChargePercent ?? 2,
       paystackChargePercent: settings.paystackChargePercent ?? 2,
       minWithdrawal: settings.minWithdrawal ?? 30,
       withdrawalPoolBalance: poolSummary.withdrawalPoolBalance ?? 0,
@@ -836,19 +836,20 @@ router.put('/settings', requireAdminOtp, asyncHandler(async (req: AuthRequest, r
   const settings = await getSettings();
   const { processingFeePercent, paystackChargePercent, minWithdrawal } = req.body;
 
-  if (processingFeePercent !== undefined) {
-    const fee = Number(processingFeePercent);
-    if (!Number.isFinite(fee) || fee < 0 || fee > 100) {
-      throw new AppError('Processing fee must be a number between 0 and 100');
-    }
-    settings.processingFeePercent = fee;
-  }
   if (paystackChargePercent !== undefined) {
     const fee = Number(paystackChargePercent);
     if (!Number.isFinite(fee) || fee < 0 || fee > 100) {
       throw new AppError('Paystack charge must be a number between 0 and 100');
     }
     settings.paystackChargePercent = fee;
+    settings.processingFeePercent = fee;
+  } else if (processingFeePercent !== undefined) {
+    const fee = Number(processingFeePercent);
+    if (!Number.isFinite(fee) || fee < 0 || fee > 100) {
+      throw new AppError('Paystack charge must be a number between 0 and 100');
+    }
+    settings.paystackChargePercent = fee;
+    settings.processingFeePercent = fee;
   }
   if (minWithdrawal !== undefined) {
     const min = Number(minWithdrawal);

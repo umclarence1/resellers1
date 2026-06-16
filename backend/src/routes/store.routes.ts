@@ -157,7 +157,8 @@ router.post('/:slug/purchase/init', purchaseLimiter, blockStorePricing, asyncHan
   const sellingPrice = customPrice ?? pkg.resellerBasePrice;
 
   const settings = await getSettings();
-  const processingFee = roundMoney(sellingPrice * (settings.processingFeePercent / 100));
+  const paystackChargePercent = settings.paystackChargePercent ?? 2;
+  const processingFee = roundMoney(sellingPrice * (paystackChargePercent / 100));
   const total = roundMoney(sellingPrice + processingFee);
 
   const reference = `CUS-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;

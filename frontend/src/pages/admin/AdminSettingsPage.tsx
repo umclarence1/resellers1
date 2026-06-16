@@ -31,7 +31,6 @@ const FULFILLMENT_NETWORKS: { id: FulfillmentNetwork; label: string }[] = [
 ];
 
 type SettingsData = {
-  processingFeePercent: number;
   paystackChargePercent: number;
   minWithdrawal: number;
   withdrawalPoolBalance: number;
@@ -45,7 +44,6 @@ type SettingsData = {
 };
 
 const defaultSettings: SettingsData = {
-  processingFeePercent: 2,
   paystackChargePercent: 2,
   minWithdrawal: 30,
   withdrawalPoolBalance: 0,
@@ -67,8 +65,7 @@ const defaultFulfillment: FulfillmentSettings = {
 
 function normalizeSettings(data: Partial<SettingsData>): SettingsData {
   return {
-    processingFeePercent: Number(data.processingFeePercent) || 2,
-    paystackChargePercent: Number(data.paystackChargePercent) || 2,
+    paystackChargePercent: Number(data.paystackChargePercent ?? data.processingFeePercent) || 2,
     minWithdrawal: Number(data.minWithdrawal) || 30,
     withdrawalPoolBalance: Number(data.withdrawalPoolBalance) || 0,
     totalPoolDeposits: Number(data.totalPoolDeposits) || 0,
@@ -113,7 +110,6 @@ export default function AdminSettingsPage() {
   const [error, setError] = useState('');
 
   const [form, setForm] = useState({
-    processingFeePercent: '2',
     paystackChargePercent: '2',
     minWithdrawal: '30',
   });
@@ -148,7 +144,6 @@ export default function AdminSettingsPage() {
       const data = normalizeSettings(settingsResult.value.data.data as Partial<SettingsData>);
       setSettings(data);
       setForm({
-        processingFeePercent: String(data.processingFeePercent),
         paystackChargePercent: String(data.paystackChargePercent),
         minWithdrawal: String(data.minWithdrawal),
       });
@@ -243,7 +238,6 @@ export default function AdminSettingsPage() {
     setMessage('');
     try {
       await api.put('/admin/settings', {
-        processingFeePercent: parseFloat(form.processingFeePercent),
         paystackChargePercent: parseFloat(form.paystackChargePercent),
         minWithdrawal: parseFloat(form.minWithdrawal),
         adminOtp,
@@ -613,19 +607,15 @@ export default function AdminSettingsPage() {
 
             <form noValidate onSubmit={saveSettings} className="space-y-4">
               <Input
-                label="Store processing fee (%)"
-                type="number"
-                step="0.1"
-                value={form.processingFeePercent}
-                onChange={(e) => setForm((f) => ({ ...f, processingFeePercent: e.target.value }))}
-              />
-              <Input
-                label="Paystack charge (%) — agent & reseller wallet top-ups"
+                label="Paystack charge (%) — all card/MoMo payments"
                 type="number"
                 step="0.1"
                 value={form.paystackChargePercent}
                 onChange={(e) => setForm((f) => ({ ...f, paystackChargePercent: e.target.value }))}
               />
+              <p className="text-xs text-gray-500 -mt-2">
+                Applies to customer store orders, agent wallet top-ups, and reseller wallet top-ups (e.g. GHS 5.00 → GHS 5.10 at 2%).
+              </p>
               <Input
                 label="Minimum reseller withdrawal (GHS)"
                 type="number"
