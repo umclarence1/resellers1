@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { api } from '@/lib/api';
 import DashboardLayout from '@/components/layout/DashboardLayout';
@@ -11,6 +11,7 @@ import { useNavigate } from 'react-router-dom';
 import { Copy, ExternalLink, Lock, Store, Tag } from 'lucide-react';
 import { runValidators, v } from '@/lib/form-validation';
 import { computeResellerProfit } from '@/lib/reseller-profit';
+import { buildResellerStoreUrl } from '@/lib/reseller-store-ref';
 import NetworkStockBar, { NetworkStockRow } from '@/components/network/NetworkStockBar';
 
 interface StoreData {
@@ -65,6 +66,8 @@ export default function ResellerStorePage() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [copied, setCopied] = useState(false);
+  const [linkJustGenerated, setLinkJustGenerated] = useState(false);
+  const generatedLinkRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!loading && (!user || user.role !== 'reseller')) navigate('/login/reseller');
@@ -133,7 +136,8 @@ export default function ResellerStorePage() {
       const { data } = await api.put('/reseller/store', form);
       const updated = data.data as StoreData;
       setStore(updated);
-      setSuccess('Store saved! Your store link is ready to share.');
+      setLinkJustGenerated(true);
+      setSuccess('Your store link is ready — copy it below and share with customers.');
       if (user?.resellerStore) {
         setUser({
           ...user,
@@ -144,6 +148,9 @@ export default function ResellerStorePage() {
           },
         });
       }
+      requestAnimationFrame(() => {
+        generatedLinkRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save store');
     } finally {
@@ -166,9 +173,9 @@ export default function ResellerStorePage() {
     }
   };
 
-  const copyLink = async () => {
-    if (!store?.storeUrl) return;
-    await navigator.clipboard.writeText(store.storeUrl);
+  const copyLink = async (url: string) => {
+    if (!url) return;
+    await navigator.clipboard.writeText(url);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -181,7 +188,32 @@ export default function ResellerStorePage() {
     return acc;
   }, {});
 
-  const canShareLink = Boolean(store?.canShareLink && store.storeUrl);
+  const shareUrl =
+    store?.storeUrl ?? (store?.slug ? buildResellerStoreUrl(store.slug) : null);
+  const canShareLink = Boolean(store?.canShareLink && shareUrl);
+
+  const storeLinkCard = shareUrl ? (
+    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="min-w-0">
+        <p className="text-xs uppercase tracking-wide text-emerald-600 font-semibold mb-1">
+          Your store link
+        </p>
+        <p className="font-mono text-sm text-gray-800 break-all select-all">{shareUrl}</p>
+      </div>
+      <div className="flex gap-2 shrink-0">
+        <Button size="sm" variant="outline" onClick={() => copyLink(shareUrl)}>
+          <Copy className="w-4 h-4" />
+          {copied ? 'Copied!' : 'Copy link'}
+        </Button>
+        <a href={shareUrl} target="_blank" rel="noopener noreferrer">
+          <Button size="sm" variant="secondary">
+            <ExternalLink className="w-4 h-4" />
+            Open store
+          </Button>
+        </a>
+      </div>
+    </div>
+  ) : null;
   const networkStock = pricing.networkStock ?? [];
   const stockByNetwork = Object.fromEntries(networkStock.map((row) => [row.network, row.inStock]));
 
@@ -215,29 +247,6 @@ export default function ResellerStorePage() {
               <p className="text-xs text-gray-500 mt-2">
                 Your store name and share link unlock after pricing is complete.
               </p>
-            </div>
-          </div>
-        </Card>
-      )}
-
-      {canShareLink && (
-        <Card className="p-5 mb-6 border-emerald-200 bg-gradient-to-r from-emerald-50 to-white">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div>
-              <p className="text-xs uppercase tracking-wide text-emerald-600 font-semibold mb-1">Your store link</p>
-              <p className="font-mono text-sm text-gray-800 break-all">{store!.storeUrl}</p>
-            </div>
-            <div className="flex gap-2 shrink-0">
-              <Button size="sm" variant="outline" onClick={copyLink}>
-                <Copy className="w-4 h-4" />
-                {copied ? 'Copied!' : 'Copy'}
-              </Button>
-              <a href={store!.storeUrl!} target="_blank" rel="noopener noreferrer">
-                <Button size="sm" variant="secondary">
-                  <ExternalLink className="w-4 h-4" />
-                  Visit
-                </Button>
-              </a>
             </div>
           </div>
         </Card>
@@ -397,6 +406,22 @@ export default function ResellerStorePage() {
             <Button type="submit" loading={saving} className="w-full" disabled={!pricing.pricesReady}>
               Save store & generate link
             </Button>
+
+            {canShareLink && shareUrl && (
+              <div
+                ref={generatedLinkRef}
+                className={`mt-4 p-4 rounded-xl border-2 ${
+                  linkJustGenerated
+                    ? 'border-emerald-400 bg-emerald-50 ring-2 ring-emerald-200'
+                    : 'border-emerald-200 bg-emerald-50/60'
+                }`}
+              >
+                <p className="text-sm font-semibold text-emerald-800 mb-3">
+                  {linkJustGenerated ? 'Your link has been generated — share it with customers' : 'Your store link'}
+                </p>
+                {storeLinkCard}
+              </div>
+            )}
           </form>
         </Card>
 

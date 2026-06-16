@@ -63,7 +63,12 @@ const defaultFulfillment: FulfillmentSettings = {
   webhookUrl: '',
 };
 
-function normalizeSettings(data: Partial<SettingsData>): SettingsData {
+type SettingsApiData = Partial<SettingsData> & {
+  /** @deprecated Legacy field from before Paystack charge was unified */
+  processingFeePercent?: number;
+};
+
+function normalizeSettings(data: SettingsApiData): SettingsData {
   return {
     paystackChargePercent: Number(data.paystackChargePercent ?? data.processingFeePercent) || 2,
     minWithdrawal: Number(data.minWithdrawal) || 30,
@@ -141,7 +146,7 @@ export default function AdminSettingsPage() {
     ]);
 
     if (settingsResult.status === 'fulfilled') {
-      const data = normalizeSettings(settingsResult.value.data.data as Partial<SettingsData>);
+      const data = normalizeSettings(settingsResult.value.data.data as SettingsApiData);
       setSettings(data);
       setForm({
         paystackChargePercent: String(data.paystackChargePercent),
