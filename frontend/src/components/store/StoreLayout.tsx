@@ -64,7 +64,7 @@ export default function StoreLayout({
       <header className="relative bg-navy-light/95 backdrop-blur-md border-b border-navy-border sticky top-0 z-40 h-16">
         <div className="max-w-6xl mx-auto px-4 h-full flex items-center justify-between gap-3">
           {brandName === PLATFORM_NAME ? (
-            <BrandMark className="text-base sm:text-lg font-bold text-white truncate min-w-0" />
+            <BrandMark className="min-w-0" size="sm" />
           ) : (
             <span className="text-base sm:text-lg font-bold text-white truncate min-w-0">{displayName}</span>
           )}

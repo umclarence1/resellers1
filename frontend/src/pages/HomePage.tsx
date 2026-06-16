@@ -77,7 +77,7 @@ export default function HomePage() {
                 <div className="bg-navy-light border-4 border-navy-border rounded-[2.5rem] p-3 shadow-2xl shadow-black/40">
                   <div className="bg-white rounded-[2rem] overflow-hidden">
                     <div className="bg-navy px-5 py-4">
-                      <BrandMark className="text-white font-bold text-sm" />
+                      <BrandMark size="sm" />
                     </div>
                     <div className="p-4 space-y-2">
                       {['MTN Data Bundles', 'Telecel Packages', 'AirtelTigo Plans', 'Wallet & Earnings', 'My Store'].map((item) => (
