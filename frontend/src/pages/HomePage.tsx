@@ -18,9 +18,6 @@ export default function HomePage() {
 
       {/* Hero */}
       <section className="relative overflow-hidden">
-        <div className="absolute top-20 right-0 w-96 h-96 bg-gold/10 rounded-full blur-3xl" />
-        <div className="absolute bottom-0 left-1/4 w-72 h-72 bg-blue-500/5 rounded-full blur-3xl" />
-
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-16 lg:py-24">
           <div className="grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
             {/* Left — Text */}
@@ -72,7 +69,6 @@ export default function HomePage() {
 
             {/* Right — Phone mockup */}
             <div className="relative flex justify-center lg:justify-end">
-              <div className="absolute -top-4 right-12 w-32 h-32 bg-gold/20 rounded-full blur-2xl" />
               <div className="relative w-[280px] sm:w-[300px]">
                 <div className="bg-navy-light border-4 border-navy-border rounded-[2.5rem] p-3 shadow-2xl shadow-black/40">
                   <div className="bg-white rounded-[2rem] overflow-hidden">
