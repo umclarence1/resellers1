@@ -164,11 +164,13 @@ export default function SupportAssistant() {
 
   const isHomeLanding = pathname === '/' && !storeSlug;
 
+  const isStorePage = pathname.startsWith('/store/');
+
   const fabClass = isDashboard
     ? 'bottom-5 right-3 sm:bottom-6 sm:right-6 w-11 h-11 bg-navy-light border border-navy-border text-gold hover:border-gold/50'
     : isHomeLanding
-      ? 'bottom-24 left-3 sm:bottom-28 sm:left-6 w-12 h-12 bg-gold text-navy hover:bg-gold-hover shadow-gold/25'
-      : 'bottom-5 left-3 sm:bottom-6 sm:left-6 w-12 h-12 bg-gold text-navy hover:bg-gold-hover shadow-gold/25';
+      ? 'bottom-24 left-3 sm:bottom-28 sm:left-6 w-12 h-12 bg-gold text-navy hover:bg-gold-hover'
+      : 'bottom-5 left-3 sm:bottom-6 sm:left-6 w-12 h-12 bg-gold text-navy hover:bg-gold-hover';
 
   const panelAnchorClass = isDashboard
     ? 'sm:bottom-20 sm:right-3 sm:right-6'
@@ -188,7 +190,9 @@ export default function SupportAssistant() {
           onClick={() => setOpen(true)}
           aria-label="Open help assistant"
           className={cn(
-            'fixed z-50 flex items-center justify-center rounded-full shadow-lg transition-all duration-200',
+            'fixed z-50 flex items-center justify-center rounded-full transition-all duration-200',
+            isStorePage ? 'shadow-none' : 'shadow-lg',
+            isHomeLanding && 'shadow-gold/25',
             fabClass
           )}
           style={{ marginBottom: 'env(safe-area-inset-bottom)' }}

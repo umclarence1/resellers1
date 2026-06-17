@@ -191,8 +191,6 @@ export default function OrderHistoryPanel({ slug, storeName }: { slug: string; s
 
   return (
     <section className="py-12 sm:py-16 relative overflow-hidden">
-      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[300px] bg-gold/5 rounded-full blur-3xl pointer-events-none" />
-
       <div className="max-w-2xl mx-auto px-4 relative z-10">
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br from-gold/20 to-gold/5 border border-gold/30 mb-4">

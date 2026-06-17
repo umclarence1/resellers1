@@ -90,7 +90,6 @@ export default function StoreHomePage() {
       {activeTab === 'home' && (
         <>
           <section className="relative py-16 lg:py-24 overflow-hidden">
-            <div className="absolute top-10 right-0 w-72 h-72 bg-gold/10 rounded-full blur-3xl" />
             <div className="max-w-6xl mx-auto px-4 text-center relative z-10">
               <h1 className="text-2xl sm:text-3xl lg:text-5xl font-bold text-white mb-4">
                 {store.storeName}
@@ -98,7 +97,7 @@ export default function StoreHomePage() {
               <p className="text-lg text-gray-400 mb-8 max-w-xl mx-auto">
                 Fast, reliable data bundles for all networks in Ghana. Buy now and get instant delivery.
               </p>
-              <Button size="lg" onClick={() => handleTabChange('services')}>
+              <Button size="lg" className="shadow-none" onClick={() => handleTabChange('services')}>
                 Buy Data Now
               </Button>
             </div>
