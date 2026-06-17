@@ -1,6 +1,7 @@
 import { User } from '../models/User';
 import { Order } from '../models/Order';
 import { Wallet } from '../models/Wallet';
+import { normalizeOrderStatus } from '../utils/orderStatus';
 
 function escapeRegex(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -108,7 +109,10 @@ export async function adminSearch(query: string) {
       recipientPhone: o.recipientPhone,
       network: o.network,
       bundleSize: o.bundleSize,
-      status: o.status,
+      status: normalizeOrderStatus(
+        typeof o.status === 'string' ? o.status : undefined,
+        typeof o.providerStatus === 'string' ? o.providerStatus : undefined
+      ),
       providerStatus: o.providerStatus,
       source: o.source,
       sellingPrice: o.sellingPrice,

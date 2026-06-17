@@ -1,6 +1,7 @@
 import mongoose, { Document, Schema } from 'mongoose';
 import { Network } from './Package';
 import { generateOrderNumber } from '../utils/helpers';
+import { isValidOrderStatus, normalizeOrderStatus } from '../utils/orderStatus';
 
 export type OrderStatus = 'pending' | 'processing' | 'delivered' | 'failed' | 'refunded' | 'cancelled';
 export type OrderSource = 'agent' | 'agent_api' | 'reseller_store' | 'admin';
@@ -133,6 +134,9 @@ const orderSchema = new Schema<IOrder>(
 
 orderSchema.pre('validate', function () {
   assignOrderIdentifiers(this);
+  if (!isValidOrderStatus(this.status)) {
+    this.status = normalizeOrderStatus(this.status, this.providerStatus);
+  }
 });
 
 orderSchema.pre('save', function () {

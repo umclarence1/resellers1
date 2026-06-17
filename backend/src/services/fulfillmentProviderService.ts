@@ -13,6 +13,7 @@ import {
   fetchSmartDataHubBulkStatus,
   isSmartDataHubConfigured,
 } from './smartDataHubClient';
+import { normalizeOrderStatus } from '../utils/orderStatus';
 
 export interface StatusHistoryEntry {
   step: string;
@@ -220,7 +221,11 @@ export async function applyOrderStatusUpdate(
   if (update.providerBatchId) order.providerBatchId = update.providerBatchId;
   if (update.providerReference) order.providerReference = update.providerReference;
   if (update.providerStatus) order.providerStatus = update.providerStatus;
-  if (update.status) order.status = update.status;
+  if (update.status) {
+    order.status = update.status;
+  } else if (update.providerStatus) {
+    order.status = normalizeOrderStatus(order.status, update.providerStatus);
+  }
 
   if (update.stepLabel || update.stepMessage || update.providerStatus || update.status) {
     pushHistory(order, {

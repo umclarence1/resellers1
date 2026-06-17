@@ -41,7 +41,13 @@ export function formatOrderStatusLabel(status?: string | null, providerStatus?: 
   if (providerStatus === 'awaiting_provider_balance') {
     return 'Awaiting Provider Balance';
   }
-  return (status || 'unknown').replace(/_/g, ' ');
+  if (status) {
+    return status.replace(/_/g, ' ');
+  }
+  if (providerStatus) {
+    return providerStatus.replace(/_/g, ' ');
+  }
+  return 'pending';
 }
 
 export function statusBadgeClass(status?: string | null, providerStatus?: string) {

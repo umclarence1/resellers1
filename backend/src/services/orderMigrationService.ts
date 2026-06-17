@@ -1,5 +1,6 @@
 import { Order } from '../models/Order';
 import { generateOrderNumber } from '../utils/helpers';
+import { normalizeOrderStatus } from '../utils/orderStatus';
 
 const MISSING_ORDER_NUMBER_FILTER = {
   $or: [
@@ -67,7 +68,50 @@ export async function ensureOrderNumberIndexes(): Promise<void> {
   }
 }
 
+const MISSING_OR_INVALID_STATUS_FILTER = {
+  $or: [
+    { status: null },
+    { status: { $exists: false } },
+    { status: '' },
+    {
+      status: {
+        $nin: ['pending', 'processing', 'delivered', 'failed', 'refunded', 'cancelled'],
+      },
+    },
+  ],
+};
+
+/** Backfill legacy orders missing or with invalid status before API responses rely on it. */
+export async function backfillOrderStatuses(): Promise<{ updated: number; remaining: number }> {
+  const cursor = Order.collection.find(MISSING_OR_INVALID_STATUS_FILTER);
+  let updated = 0;
+
+  for await (const doc of cursor) {
+    const providerStatus =
+      typeof doc.providerStatus === 'string' ? doc.providerStatus : undefined;
+    const status = normalizeOrderStatus(
+      typeof doc.status === 'string' ? doc.status : undefined,
+      providerStatus
+    );
+
+    await Order.collection.updateOne({ _id: doc._id }, { $set: { status } });
+    updated += 1;
+  }
+
+  const remaining = await Order.collection.countDocuments(MISSING_OR_INVALID_STATUS_FILTER);
+
+  if (updated > 0) {
+    console.log(`Backfilled status on ${updated} order(s)`);
+  }
+  if (remaining > 0) {
+    console.warn(`${remaining} order(s) still missing valid status after backfill`);
+  }
+
+  return { updated, remaining };
+}
+
 export async function migrateOrderNumbers(): Promise<void> {
   await backfillOrderNumbers();
+  await backfillOrderStatuses();
   await ensureOrderNumberIndexes();
 }

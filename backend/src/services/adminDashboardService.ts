@@ -9,6 +9,7 @@ import { getPlatformProfitTotals } from './platformProfitService';
 import { getPerformanceLeaderboard } from './performanceService';
 import { getResellerPoolSummary } from './resellerProfitService';
 import { getFulfillmentStatusCounts } from './fulfillmentProviderService';
+import { normalizeOrderStatus } from '../utils/orderStatus';
 
 const CACHE_TTL_MS = 45_000;
 let cache: { expires: number; data: Record<string, unknown> } | null = null;
@@ -27,7 +28,10 @@ function mapRecentOrder(o: Record<string, unknown>) {
     recipientPhone: o.recipientPhone,
     network: o.network,
     bundleSize: o.bundleSize,
-    status: o.status,
+    status: normalizeOrderStatus(
+      typeof o.status === 'string' ? o.status : undefined,
+      typeof o.providerStatus === 'string' ? o.providerStatus : undefined
+    ),
     providerStatus: o.providerStatus,
     source: o.source,
     sellingPrice: o.sellingPrice,
