@@ -31,7 +31,7 @@ export const STATUS_STYLES: Record<string, string> = {
   awaiting_provider_balance: 'bg-orange-100 text-orange-800 border-orange-200',
 };
 
-export function formatOrderStatusLabel(status: string, providerStatus?: string) {
+export function formatOrderStatusLabel(status?: string | null, providerStatus?: string) {
   if (providerStatus === 'submitting_to_api' || providerStatus === 'submitting') {
     return 'Submitting to API';
   }
@@ -41,21 +41,22 @@ export function formatOrderStatusLabel(status: string, providerStatus?: string) 
   if (providerStatus === 'awaiting_provider_balance') {
     return 'Awaiting Provider Balance';
   }
-  return status.replace(/_/g, ' ');
+  return (status || 'unknown').replace(/_/g, ' ');
 }
 
-export function statusBadgeClass(status: string, providerStatus?: string) {
+export function statusBadgeClass(status?: string | null, providerStatus?: string) {
   if (providerStatus && STATUS_STYLES[providerStatus]) {
     return STATUS_STYLES[providerStatus];
   }
-  return STATUS_STYLES[status] || STATUS_STYLES.pending;
+  return (status && STATUS_STYLES[status]) || STATUS_STYLES.pending;
 }
 
 export function matchesStatusFilter(
-  status: string,
+  status: string | undefined | null,
   providerStatus: string | undefined,
   filter: OrderStatusFilter
 ) {
+  const normalizedStatus = status || '';
   if (filter === 'all') return true;
   if (filter === 'submitting') {
     return (
@@ -66,12 +67,12 @@ export function matchesStatusFilter(
   }
   if (filter === 'processing') {
     return (
-      status === 'processing' &&
+      normalizedStatus === 'processing' &&
       providerStatus !== 'submitting_to_api' &&
       providerStatus !== 'awaiting_provider_balance'
     );
   }
-  return status === filter;
+  return normalizedStatus === filter;
 }
 
 export function statusFilterButtonClass(active: boolean) {

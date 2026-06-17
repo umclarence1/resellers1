@@ -449,7 +449,7 @@ export default function AdminDashboard() {
                   <td className={cn(panelTableCellClass, 'text-gray-700')}>{o.recipientPhone}</td>
                   <td className={panelTableCellClass}>
                     <p className="font-medium text-gray-900">{orderPartyLabel(o)}</p>
-                    <p className="text-[10px] text-gray-400 capitalize">{o.source?.replace('_', ' ')}</p>
+                    <p className="text-[10px] text-gray-400 capitalize">{o.source?.replace('_', ' ') ?? '—'}</p>
                   </td>
                   <td className={cn(panelTableCellClass, 'font-semibold text-emerald-700')}>
                     {formatCurrency(o.sellingPrice)}
@@ -510,7 +510,7 @@ export default function AdminDashboard() {
                   <td className={cn(panelTableCellClass, 'text-gray-700')}>{c.userId?.fullName || 'Reseller'}</td>
                   <td className={panelTableCellClass}>
                     <span className="text-xs font-semibold text-amber-800 bg-amber-100 border border-amber-200 px-2.5 py-1 rounded-full capitalize">
-                      {c.status.replace('_', ' ')}
+                      {(c.status || 'pending').replace(/_/g, ' ')}
                     </span>
                   </td>
                   <td className={cn(panelTableCellClass, 'text-gray-600 text-xs whitespace-nowrap')}>
