@@ -1,14 +1,24 @@
-import { Navigate, useParams } from 'react-router-dom';
-import { buildStoreHomePath, buildStoreBuyPath } from '@/lib/reseller-store-ref';
+import { Navigate, useParams, useSearchParams } from 'react-router-dom';
+import { buildStoreBuyPath, buildStoreHomePath, readStoreRef } from '@/lib/reseller-store-ref';
 
-export function StoreHomeRedirect() {
-  const { slug } = useParams();
+/** Legacy /?r=slug → /store/slug */
+export function LegacyStoreHomeRedirect() {
+  const [searchParams] = useSearchParams();
+  const slug = searchParams.get('r')?.trim();
   if (!slug) return <Navigate to="/" replace />;
-  return <Navigate to={buildStoreHomePath(slug)} replace />;
+  const tab = searchParams.get('tab');
+  const paid = searchParams.get('paid');
+  const extra: Record<string, string> = {};
+  if (tab) extra.tab = tab;
+  if (paid) extra.paid = paid;
+  return <Navigate to={buildStoreHomePath(slug, Object.keys(extra).length ? extra : undefined)} replace />;
 }
 
-export function StoreBuyRedirect() {
-  const { slug, network } = useParams();
+/** Legacy /buy/:network?r=slug → /store/slug/buy/:network */
+export function LegacyStoreBuyRedirect() {
+  const { network } = useParams();
+  const [searchParams] = useSearchParams();
+  const slug = readStoreRef(searchParams);
   if (!slug || !network) return <Navigate to="/" replace />;
   return <Navigate to={buildStoreBuyPath(slug, decodeURIComponent(network))} replace />;
 }

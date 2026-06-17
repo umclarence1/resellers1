@@ -3,22 +3,43 @@ import { CANONICAL_WEBSITE } from './canonical-site';
 
 const STORAGE_KEY = 'reseller_store_ref';
 
-/** Share link on topdealsgh.com — reseller earns profit on orders placed via this ref. */
+const STORE_PATH_RE = /^\/store\/([^/]+)/;
+
+/** Customer-facing store home on the canonical domain (slug from store name). */
 export function buildResellerStoreUrl(slug: string) {
   const origin = (APP_URL || CANONICAL_WEBSITE).replace(/\/$/, '');
-  return `${origin}/?r=${encodeURIComponent(slug)}`;
+  return `${origin}/store/${encodeURIComponent(slug)}`;
 }
 
 export function buildStoreHomePath(slug: string, extra?: Record<string, string>) {
-  const params = new URLSearchParams({ r: slug, ...extra });
-  return `/?${params.toString()}`;
+  const params = new URLSearchParams(extra);
+  const query = params.toString();
+  const base = `/store/${encodeURIComponent(slug)}`;
+  return query ? `${base}?${query}` : base;
 }
 
 export function buildStoreBuyPath(slug: string, network: string) {
-  return `/buy/${encodeURIComponent(network)}?r=${encodeURIComponent(slug)}`;
+  return `/store/${encodeURIComponent(slug)}/buy/${encodeURIComponent(network)}`;
 }
 
-export function readStoreRef(searchParams: URLSearchParams): string | null {
+export function readStoreSlugFromPath(pathname: string): string | null {
+  const match = pathname.match(STORE_PATH_RE);
+  if (!match?.[1]) return null;
+  try {
+    return decodeURIComponent(match[1]).trim() || null;
+  } catch {
+    return match[1].trim() || null;
+  }
+}
+
+/** Legacy ?r= query param — prefer /store/:slug paths for new links. */
+export function readStoreRef(searchParams: URLSearchParams, pathname = ''): string | null {
+  const fromPath = readStoreSlugFromPath(pathname);
+  if (fromPath) {
+    persistStoreRef(fromPath);
+    return fromPath;
+  }
+
   const fromQuery = searchParams.get('r')?.trim();
   if (fromQuery) {
     persistStoreRef(fromQuery);

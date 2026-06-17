@@ -165,7 +165,7 @@ export default function AdminSearchPage() {
                           <p className="text-xs text-purple-300 mt-1">
                             {r.storeName}
                             {r.storeSlug && (
-                              <span className="text-gray-500"> · ?r={r.storeSlug}</span>
+                              <span className="text-gray-500"> · /store/{r.storeSlug}</span>
                             )}
                           </p>
                         )}

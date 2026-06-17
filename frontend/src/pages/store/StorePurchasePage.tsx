@@ -6,36 +6,22 @@ import Input from '@/components/ui/Input';
 import Select from '@/components/ui/Select';
 import { Card } from '@/components/ui/Card';
 import { formatCurrency } from '@/lib/utils';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { StoreTab } from '@/components/store/StoreLayout';
 import { runValidators, v } from '@/lib/form-validation';
 import { redirectToPaystack } from '@/lib/paystack';
-import {
-  buildStoreHomePath,
-  persistStoreRef,
-  readStoreRef,
-} from '@/lib/reseller-store-ref';
-import { PLATFORM_NAME } from '@/lib/brand';
+import { buildStoreHomePath, persistStoreRef } from '@/lib/reseller-store-ref';
 
-export default function StorePurchasePage({ mainDomain = false }: { mainDomain?: boolean }) {
+export default function StorePurchasePage() {
   const params = useParams();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-  const slug =
-    (mainDomain ? readStoreRef(searchParams) : null) ||
-    (params.slug as string) ||
-    searchParams.get('r') ||
-    '';
+  const slug = (params.slug as string)?.trim() || '';
   const network = decodeURIComponent(params.network as string);
 
   const handleTabChange = (tab: StoreTab) => {
-    if (mainDomain && slug) {
-      const next: Record<string, string> = { r: slug };
-      if (tab !== 'home') next.tab = tab;
-      navigate(buildStoreHomePath(slug, tab !== 'home' ? { tab } : undefined));
-      return;
-    }
-    navigate(`/store/${slug}`, { state: { tab } });
+    const extra: Record<string, string> = {};
+    if (tab !== 'home') extra.tab = tab;
+    navigate(buildStoreHomePath(slug, Object.keys(extra).length ? extra : undefined));
   };
 
   const [store, setStore] = useState<Record<string, string> | null>(null);
@@ -49,13 +35,16 @@ export default function StorePurchasePage({ mainDomain = false }: { mainDomain?:
 
   useEffect(() => {
     if (!slug) return;
-    if (mainDomain) persistStoreRef(slug);
-    api.get(`/store/${slug}`).then((res) => setStore(res.data.data));
+    persistStoreRef(slug);
+    api.get(`/store/${slug}`).then((res) => {
+      setStore(res.data.data);
+      document.title = `${res.data.data.storeName} — ${network}`;
+    });
     api.get(`/store/${slug}/packages/${encodeURIComponent(network)}`).then((res) => {
       setPackages(res.data.data.packages);
       setPriceRange(res.data.data.priceRange);
     });
-  }, [slug, network, mainDomain]);
+  }, [slug, network]);
 
   const selected = packages.find((p) => p.id === packageId);
 
@@ -74,7 +63,11 @@ export default function StorePurchasePage({ mainDomain = false }: { mainDomain?:
 
     setLoading(true);
     try {
-      const res = await api.post(`/store/${slug}/purchase/init`, { packageId, recipientPhone: phone, email });
+      const res = await api.post(`/store/${slug}/purchase/init`, {
+        packageId,
+        recipientPhone: phone,
+        email,
+      });
       redirectToPaystack(res.data.data.authorizationUrl);
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Payment failed');
@@ -90,17 +83,24 @@ export default function StorePurchasePage({ mainDomain = false }: { mainDomain?:
   };
 
   if (!slug) {
-    return <div className="min-h-screen flex items-center justify-center text-gray-500">Invalid store link</div>;
+    return (
+      <div className="min-h-screen flex items-center justify-center text-gray-500">Invalid store link</div>
+    );
   }
 
   if (!store) return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
 
   return (
     <StoreLayout
-      store={store as { storeName: string; slug: string; phone: string; whatsapp: string; supportEmail: string }}
+      store={store as {
+        storeName: string;
+        slug: string;
+        phone: string;
+        whatsapp: string;
+        supportEmail: string;
+      }}
       activeTab="services"
       onTabChange={handleTabChange}
-      brandName={mainDomain ? PLATFORM_NAME : undefined}
     >
       <div className="max-w-lg mx-auto px-4 sm:px-6 py-8 sm:py-10">
         <Card className="p-4 sm:p-6">
@@ -119,36 +119,26 @@ export default function StorePurchasePage({ mainDomain = false }: { mainDomain?:
                 setPackageId(e.target.value);
                 if (fieldErrors.packageId) setFieldErrors((prev) => ({ ...prev, packageId: '' }));
               }}
+              error={fieldErrors.packageId}
               options={[
-                { value: '', label: 'Choose a bundle...' },
-                ...packages.map((p) => ({
-                  value: p.id as string,
-                  label: p.bundleSize as string,
+                { value: '', label: 'Choose a bundle' },
+                ...packages.map((pkg) => ({
+                  value: String(pkg.id),
+                  label: `${String(pkg.bundleSize)} — ${formatCurrency(Number(pkg.price))}`,
                 })),
               ]}
             />
-            {fieldErrors.packageId && (
-              <p className="text-sm text-red-600 -mt-2">{fieldErrors.packageId}</p>
-            )}
-
-            {selected && (
-              <div className="bg-blue-50 rounded-lg p-4 space-y-1">
-                <p className="text-sm text-gray-600">Selected: <strong>{selected.bundleSize as string}</strong></p>
-                <p className="text-lg font-bold text-blue-700">Price: {formatCurrency(selected.price as number)}</p>
-              </div>
-            )}
 
             <Input
-              label="Recipient Number"
+              label="Recipient phone number"
               value={phone}
               onChange={(e) => handlePhoneChange(e.target.value)}
               placeholder="0XXXXXXXXX"
-              inputMode="numeric"
-              maxLength={10}
               error={fieldErrors.phone}
             />
+
             <Input
-              label="Email Address"
+              label="Your email (for receipt)"
               type="email"
               value={email}
               onChange={(e) => {
@@ -158,14 +148,14 @@ export default function StorePurchasePage({ mainDomain = false }: { mainDomain?:
               error={fieldErrors.email}
             />
 
-            <Button
-              type="submit"
-              loading={loading}
-              disabled={!packageId || !phone || !email}
-              className="w-full"
-              size="lg"
-            >
-              Proceed To Payment
+            {selected && (
+              <p className="text-sm text-gray-600 text-center">
+                Total: <strong>{formatCurrency(Number(selected.price))}</strong>
+              </p>
+            )}
+
+            <Button type="submit" className="w-full" loading={loading} disabled={!packageId}>
+              Pay with Paystack
             </Button>
           </form>
         </Card>

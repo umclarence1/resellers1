@@ -431,7 +431,7 @@ export default function ResellerStorePage() {
             <li>Set your <strong>selling prices</strong> for MTN, Telecel, and AirtelTigo.</li>
             <li>Enter your <strong>store name</strong> and contact details.</li>
             <li>Click save — your unique <strong>main-domain link</strong> is created.</li>
-            <li>Share your link — customers buy on topdealsgh; you earn profit on every order.</li>
+            <li>Share your link — customers buy from your store; you earn profit on every order.</li>
           </ol>
         </Card>
       </div>

@@ -58,7 +58,7 @@ export default function SupportAssistant() {
   const { pathname } = useLocation();
   const [searchParams] = useSearchParams();
   const { user } = useAuth();
-  const storeSlug = readStoreRef(searchParams);
+  const storeSlug = readStoreRef(searchParams, pathname);
 
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState('');

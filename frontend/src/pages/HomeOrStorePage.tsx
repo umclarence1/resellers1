@@ -1,22 +1,20 @@
-import { lazy, Suspense } from 'react';
-import { useSearchParams } from 'react-router-dom';
 import HomePage from '@/pages/HomePage';
-import { readStoreRef } from '@/lib/reseller-store-ref';
-import RouteFallback from '@/components/ui/RouteFallback';
+import { Navigate, useSearchParams } from 'react-router-dom';
 
-const StoreHomePage = lazy(() => import('@/pages/store/StoreHomePage'));
-
-/** Main domain: marketing home, or customer storefront when ?r=reseller-slug is present. */
+/** Main domain home — legacy ?r= links redirect to /store/:slug. */
 export default function HomeOrStorePage() {
   const [searchParams] = useSearchParams();
-  const slug = readStoreRef(searchParams);
+  const slug = searchParams.get('r')?.trim();
 
   if (slug) {
-    return (
-      <Suspense fallback={<RouteFallback />}>
-        <StoreHomePage slugOverride={slug} mainDomain />
-      </Suspense>
-    );
+    const tab = searchParams.get('tab');
+    const paid = searchParams.get('paid');
+    const extra: Record<string, string> = {};
+    if (tab) extra.tab = tab;
+    if (paid) extra.paid = paid;
+    const query = new URLSearchParams(extra).toString();
+    const target = `/store/${encodeURIComponent(slug)}${query ? `?${query}` : ''}`;
+    return <Navigate to={target} replace />;
   }
 
   return <HomePage />;

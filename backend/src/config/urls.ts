@@ -18,7 +18,7 @@ export function getCanonicalFrontendUrl(): string {
 }
 
 export function buildStoreShareUrl(slug: string): string {
-  return `${getCanonicalFrontendUrl()}/?r=${encodeURIComponent(slug)}`;
+  return `${getCanonicalFrontendUrl()}/store/${encodeURIComponent(slug)}`;
 }
 
 export function paystackPlatformMetadata(extra: Record<string, unknown> = {}): Record<string, unknown> {

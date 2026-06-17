@@ -3,10 +3,14 @@
   "outputDirectory": "dist",
   "framework": "vite",
   "env": {
-    "VITE_API_URL": "https://backend-snowy-eight-68.vercel.app/api",
+    "VITE_API_URL": "/api",
     "VITE_APP_URL": "https://www.topdealsgh.com"
   },
   "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "https://backend-snowy-eight-68.vercel.app/api/$1"
+    },
     { "source": "/(.*)", "destination": "/index.html" }
   ],
   "headers": [

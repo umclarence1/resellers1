@@ -40,11 +40,9 @@ const ResellerOrdersPage = lazy(() => import('@/pages/reseller/ResellerOrdersPag
 const ResellerComplaintsPage = lazy(() => import('@/pages/reseller/ResellerComplaintsPage'));
 
 const StorePurchasePage = lazy(() => import('@/pages/store/StorePurchasePage'));
-const StoreHomeRedirect = lazy(() =>
-  import('@/pages/store/StoreSlugRedirect').then((m) => ({ default: m.StoreHomeRedirect }))
-);
-const StoreBuyRedirect = lazy(() =>
-  import('@/pages/store/StoreSlugRedirect').then((m) => ({ default: m.StoreBuyRedirect }))
+const StoreHomePage = lazy(() => import('@/pages/store/StoreHomePage'));
+const LegacyStoreBuyRedirect = lazy(() =>
+  import('@/pages/store/StoreSlugRedirect').then((m) => ({ default: m.LegacyStoreBuyRedirect }))
 );
 const VerifyPage = lazy(() => import('@/pages/store/VerifyPage'));
 
@@ -64,7 +62,7 @@ export default function App() {
       </Suspense>
       <Routes>
         <Route path="/" element={<HomeOrStorePage />} />
-        <Route path="/buy/:network" element={<Lazy><StorePurchasePage mainDomain /></Lazy>} />
+        <Route path="/buy/:network" element={<Lazy><LegacyStoreBuyRedirect /></Lazy>} />
         <Route path="/login" element={<Lazy><LoginPage /></Lazy>} />
         <Route path="/login/reseller" element={<Lazy><ResellerLoginPage /></Lazy>} />
         <Route path="/login/agent" element={<Lazy><AgentLoginPage /></Lazy>} />
@@ -104,8 +102,8 @@ export default function App() {
         <Route path="/reseller/orders" element={<Lazy><ProtectedRoute role="reseller"><ResellerOrdersPage /></ProtectedRoute></Lazy>} />
         <Route path="/reseller/complaints" element={<Lazy><ProtectedRoute role="reseller"><ResellerComplaintsPage /></ProtectedRoute></Lazy>} />
 
-        <Route path="/store/:slug" element={<Lazy><StoreHomeRedirect /></Lazy>} />
-        <Route path="/store/:slug/buy/:network" element={<Lazy><StoreBuyRedirect /></Lazy>} />
+        <Route path="/store/:slug" element={<Lazy><StoreHomePage /></Lazy>} />
+        <Route path="/store/:slug/buy/:network" element={<Lazy><StorePurchasePage /></Lazy>} />
         <Route path="/store/:slug/verify" element={<Lazy><VerifyPage /></Lazy>} />
       </Routes>
       <Suspense fallback={null}>
