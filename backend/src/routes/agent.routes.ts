@@ -20,6 +20,9 @@ import { User } from '../models/User';
 import crypto from 'crypto';
 import { getOrderGrowthChart } from '../services/growthChartService';
 import { getNetworkStockList } from '../services/networkStockService';
+import { getAfaStock } from '../services/afaStockService';
+import { getAfaPackage } from '../services/afaPackageService';
+import { AFA_BASE_PRICE, AFA_BUNDLE_SIZE, AFA_CHECK_USSD, AFA_PROCESSING_HOURS } from '../config/afa';
 import {
   getOrderTracking,
   syncFulfillmentStatuses,
@@ -164,7 +167,7 @@ router.get('/networks', asyncHandler(async (_req, res) => {
 router.get('/packages', asyncHandler(async (req: AuthRequest, res) => {
   const stock = await getNetworkStockList();
   const inStock = new Set(stock.filter((s) => s.inStock).map((s) => s.network));
-  const filter: Record<string, unknown> = { isEnabled: true };
+  const filter: Record<string, unknown> = { isEnabled: true, productType: 'data' };
   if (req.query.network) {
     const network = String(req.query.network);
     if (!inStock.has(network as typeof stock[0]['network'])) {
@@ -185,6 +188,55 @@ router.get('/packages', asyncHandler(async (req: AuthRequest, res) => {
     }))
   );
   res.json({ success: true, data });
+}));
+
+router.get('/afa', asyncHandler(async (req: AuthRequest, res) => {
+  const [stock, pkg, wallet] = await Promise.all([
+    getAfaStock(),
+    getAfaPackage(),
+    getOrCreateWallet(req.user!._id),
+  ]);
+  if (!pkg) throw new AppError('AFA registration package is not configured', 503);
+
+  const agentId = req.user!._id;
+  const fee = await getAgentPrice(agentId, pkg._id, pkg);
+
+  res.json({
+    success: true,
+    data: {
+      packageId: pkg._id,
+      fee,
+      basePrice: AFA_BASE_PRICE,
+      inStock: stock.inStock,
+      imageUrl: stock.imageUrl,
+      walletBalance: wallet.balance,
+      bundleSize: AFA_BUNDLE_SIZE,
+      processingHours: AFA_PROCESSING_HOURS,
+      checkUssd: AFA_CHECK_USSD,
+    },
+  });
+}));
+
+router.post('/afa/register', purchaseLimiter, blockClientPricing, asyncHandler(async (req: AuthRequest, res) => {
+  const { fullName, phone, ghanaCard, location, occupation } = req.body;
+  const pkg = await getAfaPackage();
+  if (!pkg) throw new AppError('AFA registration is not available', 503);
+
+  const order = await createOrder({
+    packageId: pkg._id.toString(),
+    afaDetails: { fullName, phone, ghanaCard, location, occupation },
+    agentId: req.user!._id.toString(),
+    source: 'agent',
+  });
+
+  res.status(201).json({
+    success: true,
+    data: {
+      orderId: order.orderId,
+      status: order.status,
+      message: `Registration submitted. Allow ${AFA_PROCESSING_HOURS} hours, then dial ${AFA_CHECK_USSD} to check status.`,
+    },
+  });
 }));
 
 // Single purchase

@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
-import { Package, Network } from '../models/Package';
-import { Order, OrderSource, OrderStatus } from '../models/Order';
+import { Package, Network, ProductType } from '../models/Package';
+import { Order, OrderSource, OrderStatus, IAfaDetails } from '../models/Order';
 import { Setting } from '../models/Setting';
 import { User } from '../models/User';
 import { AppError } from '../middleware/errorHandler';
@@ -11,6 +11,9 @@ import { applyOrderStatusUpdate, submitOrderToProvider } from './fulfillmentProv
 import { snapshotPlatformProfitForOrder } from './platformProfitService';
 import { getAdminBasePrice, computeResellerOrderProfit } from './profitFormulas';
 import { assertNetworkInStock } from './networkStockService';
+import { assertAfaInStock } from './afaStockService';
+import { isAfaProduct, AFA_CHECK_USSD, AFA_PROCESSING_HOURS } from '../config/afa';
+import { isValidGhanaCard, normalizeGhanaCard } from '../utils/ghanaCard';
 import { resolveFulfillmentProvider } from './settingsService';
 import { getAgentPrice } from './agentPricingService';
 import { env } from '../config/env';
@@ -53,7 +56,8 @@ export const validateResellerPrice = (
 
 export interface CreateOrderInput {
   packageId: string;
-  recipientPhone: string;
+  recipientPhone?: string;
+  afaDetails?: Omit<IAfaDetails, 'phone'> & { phone: string };
   userId?: string;
   agentId?: string;
   resellerId?: string;
@@ -66,6 +70,37 @@ export interface CreateOrderInput {
   walletReference?: string;
 }
 
+export function validateAfaDetails(details: CreateOrderInput['afaDetails']): IAfaDetails {
+  if (!details) {
+    throw new AppError('AFA registration details are required');
+  }
+  const fullName = String(details.fullName || '').trim();
+  const location = String(details.location || '').trim();
+  const phone = normalizeGhanaPhone(details.phone);
+  const ghanaCard = normalizeGhanaCard(String(details.ghanaCard || ''));
+
+  if (!fullName || fullName.length < 2) {
+    throw new AppError('Full name is required');
+  }
+  if (!isValidGhanaPhone(phone)) {
+    throw new AppError('Phone must be 10 digits starting with 0');
+  }
+  if (!isValidGhanaCard(ghanaCard)) {
+    throw new AppError('Ghana Card must match format GHA-123456789-0');
+  }
+  if (!location) {
+    throw new AppError('Location is required');
+  }
+
+  return {
+    fullName,
+    phone,
+    ghanaCard,
+    location,
+    occupation: details.occupation?.trim() || 'Farmer',
+  };
+}
+
 export const fulfillStorePurchase = async (
   reference: string,
   metadata: Record<string, unknown>,
@@ -74,9 +109,21 @@ export const fulfillStorePurchase = async (
   const existing = await Order.findOne({ paystackReference: reference });
   if (existing) return existing;
 
+  const afaRaw = metadata.afaDetails as Record<string, string> | undefined;
+  const afaDetails = afaRaw
+    ? validateAfaDetails({
+        fullName: String(afaRaw.fullName || ''),
+        phone: String(afaRaw.phone || metadata.recipientPhone || ''),
+        ghanaCard: String(afaRaw.ghanaCard || ''),
+        location: String(afaRaw.location || ''),
+        occupation: afaRaw.occupation,
+      })
+    : undefined;
+
   return createOrder({
     packageId: String(metadata.packageId),
-    recipientPhone: String(metadata.recipientPhone),
+    recipientPhone: afaDetails?.phone || String(metadata.recipientPhone),
+    afaDetails,
     resellerId: String(metadata.resellerId),
     customerEmail: (metadata.customerEmail as string) || customerEmail,
     sellingPrice: Number(metadata.sellingPrice),
@@ -92,17 +139,35 @@ export const createOrder = async (input: CreateOrderInput) => {
     throw new AppError('Package not found or disabled');
   }
 
-  const recipientPhone = normalizeGhanaPhone(input.recipientPhone);
+  const isAfa = isAfaProduct(pkg.productType, pkg.bundleSize);
+  let recipientPhone: string;
+  let afaDetails: IAfaDetails | undefined;
 
-  if (!isValidGhanaPhone(recipientPhone)) {
-    throw new AppError('Recipient number must be 10 digits starting with 0');
+  if (isAfa) {
+    await assertAfaInStock();
+    afaDetails = validateAfaDetails(
+      input.afaDetails ?? {
+        fullName: '',
+        phone: input.recipientPhone || '',
+        ghanaCard: '',
+        location: '',
+      }
+    );
+    recipientPhone = afaDetails.phone;
+  } else {
+    if (!input.recipientPhone) {
+      throw new AppError('Recipient phone is required');
+    }
+    recipientPhone = normalizeGhanaPhone(input.recipientPhone);
+    if (!isValidGhanaPhone(recipientPhone)) {
+      throw new AppError('Recipient number must be 10 digits starting with 0');
+    }
+    await assertNetworkInStock(pkg.network);
   }
 
-  await assertNetworkInStock(pkg.network);
-
   const settings = await getSettings();
-  const fulfillmentProvider = await resolveFulfillmentProvider(pkg.network);
-  const apiCost = fulfillmentProvider === 'datamax' ? pkg.agentPrice : pkg.costPrice;
+  const fulfillmentProvider = isAfa ? 'datamax' : await resolveFulfillmentProvider(pkg.network);
+  const apiCost = isAfa || fulfillmentProvider === 'datamax' ? pkg.agentPrice : pkg.costPrice;
   let sellingPrice = input.sellingPrice ?? pkg.agentPrice;
   let profit = 0;
 
@@ -156,9 +221,11 @@ export const createOrder = async (input: CreateOrderInput) => {
     resellerId: input.resellerId,
     customerEmail: input.customerEmail,
     network: pkg.network,
+    productType: (isAfa ? 'afa' : 'data') as ProductType,
     bundleSize: pkg.bundleSize,
     packageId: pkg._id,
     recipientPhone,
+    afaDetails,
     costPrice: apiCost,
     adminBasePrice,
     sellingPrice,
@@ -183,7 +250,9 @@ export const createOrder = async (input: CreateOrderInput) => {
           input.agentId!,
           sellingPrice,
           'purchase',
-          `Data purchase: ${pkg.network} ${pkg.bundleSize} to ${recipientPhone}`,
+          isAfa
+            ? `AFA registration: ${afaDetails!.fullName} (${recipientPhone})`
+            : `Data purchase: ${pkg.network} ${pkg.bundleSize} to ${recipientPhone}`,
           orderRef,
           { packageId: pkg._id.toString() },
           session
@@ -276,7 +345,12 @@ export const validateBulkOrders = async (
       ? line.bundleSize.toUpperCase()
       : `${line.bundleSize}GB`;
 
-    const pkg = await Package.findOne({ network: network as Network, bundleSize: bundle, isEnabled: true });
+    const pkg = await Package.findOne({
+      network: network as Network,
+      bundleSize: bundle,
+      productType: 'data',
+      isEnabled: true,
+    });
     if (!pkg) {
       throw new AppError(`Bundle ${bundle} not found for ${network}`);
     }

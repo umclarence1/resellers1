@@ -12,6 +12,7 @@ import { getOrCreateWallet } from '../services/walletService';
 import { validateResellerPrice } from '../services/orderService';
 import { computeResellerProfit, resellerProfitRange } from '../services/resellerProfitService';
 import { getNetworkStockList } from '../services/networkStockService';
+import { getAfaStock } from '../services/afaStockService';
 import { getSettings } from '../services/settingsService';
 import { canSubmitComplaint, isComplaintsEnabledForUser } from '../services/settingsService';
 import {
@@ -193,6 +194,7 @@ router.get('/network-stock', asyncHandler(async (_req, res) => {
 
 router.get('/prices', asyncHandler(async (req: AuthRequest, res) => {
   const stock = await getNetworkStockList();
+  const afaStock = await getAfaStock();
   const packages = await Package.find({
     isEnabled: true,
     network: { $in: RESELLER_STORE_NETWORKS },
@@ -227,6 +229,7 @@ router.get('/prices', asyncHandler(async (req: AuthRequest, res) => {
       requiredCount: pricing.requiredCount,
       networksMissing: pricing.networksMissing,
       networkStock: stock,
+      afaStock,
     },
   });
 }));

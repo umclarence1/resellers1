@@ -13,6 +13,7 @@ import { migrateAgentApiApproval, provisionApprovedAgentApi } from './agentApiAp
 import { migrateFulfillmentSettings } from './settingsService';
 import { reconcileLegacyPendingWithdrawals } from './withdrawalService';
 import { migrateOrderNumbers } from './orderMigrationService';
+import { ensureAfaPackage } from './afaPackageService';
 
 const networks = ['MTN', 'Telecel', 'AirtelTigo'] as const;
 const bundles = ['1GB', '2GB', '3GB', '4GB', '5GB', '6GB', '8GB', '10GB', '15GB', '20GB', '25GB', '30GB', '40GB', '50GB'];
@@ -153,6 +154,7 @@ export const seedDatabase = async (): Promise<void> => {
   }
 
   await ensureNetworkPackages();
+  await ensureAfaPackage();
   await reconcileLegacyPendingWithdrawals();
   await migrateOrderNumbers();
 
@@ -192,7 +194,7 @@ export const ensureNetworkPackages = async () => {
 
   for (const network of networks) {
     for (const bundle of bundles) {
-      const exists = await Package.findOne({ network, bundleSize: bundle });
+      const exists = await Package.findOne({ network, bundleSize: bundle, productType: 'data' });
       const base = apiCostFor(network, bundle);
       if (exists) {
         if (network === 'MTN' && exists.costPrice !== base) {
@@ -201,9 +203,10 @@ export const ensureNetworkPackages = async () => {
         }
         continue;
       }
-      await Package.create({
-        network,
-        bundleSize: bundle,
+        await Package.create({
+          network,
+          productType: 'data',
+          bundleSize: bundle,
         costPrice: base,
         agentPrice: round(base * 1.05),
         resellerBasePrice: round(base * 1.1),

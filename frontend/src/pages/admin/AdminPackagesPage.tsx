@@ -89,7 +89,9 @@ export default function AdminPackagesPage() {
   const [savedId, setSavedId] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [networkStock, setNetworkStock] = useState<NetworkStockRow[]>([]);
+  const [afaStock, setAfaStock] = useState<{ inStock: boolean; imageUrl?: string } | null>(null);
   const [stockToggling, setStockToggling] = useState<string | null>(null);
+  const [afaStockToggling, setAfaStockToggling] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
 
   useEffect(() => {
@@ -100,14 +102,16 @@ export default function AdminPackagesPage() {
     setPageLoading(true);
     setError('');
     try {
-      const [pkgRes, stockRes] = await Promise.all([
+      const [pkgRes, stockRes, afaRes] = await Promise.all([
         api.get('/admin/packages'),
         api.get('/admin/network-stock'),
+        api.get('/admin/afa-stock'),
       ]);
       const list = (pkgRes.data.data as ApiPackageRow[]).map(normalizePackage);
       setPackages(list);
       setDrafts(draftsFromPackages(list));
       setNetworkStock(stockRes.data.data as NetworkStockRow[]);
+      setAfaStock(afaRes.data.data as { inStock: boolean; imageUrl?: string });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load packages');
       setPackages([]);
@@ -191,6 +195,19 @@ export default function AdminPackagesPage() {
     }
   };
 
+  const toggleAfaStock = async (inStock: boolean) => {
+    setAfaStockToggling(true);
+    setError('');
+    try {
+      const res = await api.patch('/admin/afa-stock', { inStock });
+      setAfaStock(res.data.data as { inStock: boolean; imageUrl?: string });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update AFA stock');
+    } finally {
+      setAfaStockToggling(false);
+    }
+  };
+
   const toggle = async (id: string) => {
     try {
       await api.patch(`/admin/packages/${id}/toggle`);
@@ -237,6 +254,37 @@ export default function AdminPackagesPage() {
           onToggle={toggleStock}
           togglingNetwork={stockToggling}
         />
+      </Card>
+
+      <Card className="p-4 mb-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-semibold text-gray-900">MTN AFA Registration stock</h2>
+            <p className="text-xs text-gray-500 mt-1">
+              Toggle availability for agents and reseller stores (GHS 15 base price).
+            </p>
+          </div>
+          {afaStock && (
+            <div className="flex items-center gap-2">
+              <span
+                className={cn(
+                  'text-xs font-medium px-2 py-1 rounded-full',
+                  afaStock.inStock ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                )}
+              >
+                {afaStock.inStock ? 'In stock' : 'Out of stock'}
+              </span>
+              <Button
+                size="sm"
+                variant="outline"
+                loading={afaStockToggling}
+                onClick={() => toggleAfaStock(!afaStock.inStock)}
+              >
+                Mark {afaStock.inStock ? 'out of stock' : 'in stock'}
+              </Button>
+            </div>
+          )}
+        </div>
       </Card>
 
       <div className="flex gap-2 mb-4 flex-wrap">

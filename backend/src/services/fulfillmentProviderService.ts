@@ -18,7 +18,9 @@ import {
   createDatamaxOrder,
   fetchDatamaxOrderStatus,
   isDatamaxConfigured,
+  registerDatamaxAfa,
 } from './datamaxClient';
+import { isAfaProduct, AFA_CHECK_USSD, AFA_PROCESSING_HOURS } from '../config/afa';
 import { normalizeOrderStatus } from '../utils/orderStatus';
 
 export interface StatusHistoryEntry {
@@ -99,12 +101,15 @@ export function buildDefaultHistory(order: IOrder): StatusHistoryEntry[] {
   const processing = ['processing', 'delivered'].includes(order.status);
   const delivered = order.status === 'delivered';
   const failed = ['failed', 'cancelled', 'refunded'].includes(order.status);
+  const isAfa = isAfaProduct(order.productType, order.bundleSize);
 
   return [
     {
       step: 'created',
       label: 'Order Created',
-      message: `Request received for ${order.recipientPhone}`,
+      message: isAfa
+        ? `AFA registration request for ${order.afaDetails?.fullName || order.recipientPhone}`
+        : `Request received for ${order.recipientPhone}`,
       done: true,
       at: order.createdAt,
     },
@@ -132,19 +137,31 @@ export function buildDefaultHistory(order: IOrder): StatusHistoryEntry[] {
     },
     {
       step: 'dispatch',
-      label: 'Bundle Dispatched',
-      message: failed ? 'Delivery could not be completed' : 'Resource sent to recipient',
-      done: delivered,
+      label: isAfa ? 'Registration Submitted' : 'Bundle Dispatched',
+      message: failed
+        ? isAfa
+          ? 'Registration could not be completed'
+          : 'Delivery could not be completed'
+        : isAfa
+          ? `Registration submitted — allow ${AFA_PROCESSING_HOURS} hours, then dial ${AFA_CHECK_USSD} to check status`
+          : 'Resource sent to recipient',
+      done: delivered || (isAfa && submitted),
       at: order.updatedAt,
     },
     {
       step: 'confirmation',
       label: 'Final Confirmation',
       message: delivered
-        ? 'End-to-end receipt validated'
+        ? isAfa
+          ? 'Registration confirmed'
+          : 'End-to-end receipt validated'
         : failed
-          ? 'Order marked as not delivered'
-          : 'Awaiting delivery confirmation',
+          ? isAfa
+            ? 'Registration marked as not completed'
+            : 'Order marked as not delivered'
+          : isAfa
+            ? `Processing — check with ${AFA_CHECK_USSD} after ${AFA_PROCESSING_HOURS} hours`
+            : 'Awaiting delivery confirmation',
       done: delivered,
       at: order.updatedAt,
     },
@@ -302,7 +319,73 @@ async function submitToSmartDataHub(order: IOrder): Promise<IOrder | null> {
   }
 }
 
+async function submitToDatamaxAfa(order: IOrder): Promise<IOrder | null> {
+  const details = order.afaDetails;
+  if (!details) {
+    return applyOrderStatusUpdate(order, {
+      status: 'failed',
+      providerStatus: 'submit_failed',
+      fulfillmentProvider: 'datamax',
+      stepLabel: 'Registration Failed',
+      stepMessage: 'Missing AFA registration details',
+    });
+  }
+
+  try {
+    const response = await registerDatamaxAfa({
+      fullName: details.fullName,
+      phone: details.phone,
+      ghanaCard: details.ghanaCard,
+      location: details.location,
+      occupation: details.occupation,
+    });
+
+    const providerOrderId =
+      response.order_id != null
+        ? String(response.order_id)
+        : response.registration_id != null
+          ? String(response.registration_id)
+          : order.orderId;
+
+    return applyOrderStatusUpdate(order, {
+      status: 'processing',
+      providerStatus: 'afa_submitted',
+      fulfillmentProvider: 'datamax',
+      providerOrderId,
+      providerReference: order.orderId,
+      stepLabel: 'Registration Submitted',
+      stepMessage:
+        response.message ||
+        `Submitted for processing — allow ${AFA_PROCESSING_HOURS} hours, then dial ${AFA_CHECK_USSD} to check`,
+    });
+  } catch (err) {
+    if (err instanceof DatamaxError && err.statusCode === 402) {
+      return applyOrderStatusUpdate(order, {
+        providerStatus: 'awaiting_provider_balance',
+        fulfillmentProvider: 'datamax',
+        stepLabel: 'Awaiting Provider Balance',
+        stepMessage: 'Queued — processing will resume shortly',
+      });
+    }
+
+    console.error('Datamax AFA submit failed:', err instanceof Error ? err.message : err);
+    return applyOrderStatusUpdate(order, {
+      providerStatus: 'submit_failed',
+      fulfillmentProvider: 'datamax',
+      stepLabel: 'Registration Failed',
+      stepMessage:
+        err instanceof DatamaxError
+          ? clientStepMessage(err.message)
+          : 'Could not reach registration gateway — retrying automatically',
+    });
+  }
+}
+
 async function submitToDatamax(order: IOrder): Promise<IOrder | null> {
+  if (isAfaProduct(order.productType, order.bundleSize)) {
+    return submitToDatamaxAfa(order);
+  }
+
   try {
     const response = await createDatamaxOrder({
       orderId: order.orderId,
@@ -347,8 +430,10 @@ async function submitToDatamax(order: IOrder): Promise<IOrder | null> {
 }
 
 export async function submitOrderToProvider(order: IOrder): Promise<IOrder | null> {
-  const provider =
-    order.fulfillmentProvider ?? (await resolveFulfillmentProvider(order.network));
+  const isAfa = isAfaProduct(order.productType, order.bundleSize);
+  const provider = isAfa
+    ? 'datamax'
+    : order.fulfillmentProvider ?? (await resolveFulfillmentProvider(order.network));
   if (!provider) return null;
   if (!isFulfillmentProviderConfigured(provider)) return null;
 
@@ -422,6 +507,17 @@ async function syncFromSmartDataHub(order: IOrder): Promise<IOrder | null> {
 async function syncFromDatamax(order: IOrder): Promise<IOrder | null> {
   if (!isDatamaxConfigured()) return null;
   if (['delivered', 'failed', 'cancelled', 'refunded'].includes(order.status)) return order;
+  if (isAfaProduct(order.productType, order.bundleSize)) {
+    if (
+      !isSubmittedToProvider(order) ||
+      QUEUED_PROVIDER_STATUSES.includes(
+        order.providerStatus as (typeof QUEUED_PROVIDER_STATUSES)[number]
+      )
+    ) {
+      return submitOrderToProvider(order);
+    }
+    return order;
+  }
 
   if (
     !isSubmittedToProvider(order) ||

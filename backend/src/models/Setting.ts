@@ -31,7 +31,13 @@ export interface IFulfillmentSettings {
   networkRouting: Record<Network, FulfillmentNetworkRoute>;
 }
 
+export interface IAfaSettings {
+  inStock: boolean;
+  imageUrl?: string;
+}
+
 export interface ISetting extends Document {
+  afaSettings?: IAfaSettings;
   processingFeePercent: number;
   paystackChargePercent: number;
   minWithdrawal: number;
@@ -46,6 +52,10 @@ export interface ISetting extends Document {
 
 const settingSchema = new Schema<ISetting>(
   {
+    afaSettings: {
+      inStock: { type: Boolean, default: true },
+      imageUrl: String,
+    },
     processingFeePercent: { type: Number, default: 2 },
     paystackChargePercent: { type: Number, default: 2 },
     minWithdrawal: { type: Number, default: 30 },

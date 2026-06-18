@@ -1,9 +1,11 @@
 import mongoose, { Document, Schema } from 'mongoose';
 
 export type Network = 'MTN' | 'Telecel' | 'AirtelTigo';
+export type ProductType = 'data' | 'afa';
 
 export interface IPackage extends Document {
   network: Network;
+  productType: ProductType;
   bundleSize: string;
   costPrice: number;
   agentPrice: number;
@@ -22,6 +24,7 @@ const packageSchema = new Schema<IPackage>(
       enum: ['MTN', 'Telecel', 'AirtelTigo'],
       required: true,
     },
+    productType: { type: String, enum: ['data', 'afa'], default: 'data' },
     bundleSize: { type: String, required: true },
     costPrice: { type: Number, required: true, min: 0 },
     agentPrice: { type: Number, required: true, min: 0 },
@@ -33,7 +36,7 @@ const packageSchema = new Schema<IPackage>(
   { timestamps: true }
 );
 
-packageSchema.index({ network: 1, bundleSize: 1 }, { unique: true });
+packageSchema.index({ network: 1, bundleSize: 1, productType: 1 }, { unique: true });
 packageSchema.index({ network: 1, isEnabled: 1 });
 
 export const Package = mongoose.model<IPackage>('Package', packageSchema);

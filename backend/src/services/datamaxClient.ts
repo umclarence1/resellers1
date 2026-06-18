@@ -140,3 +140,65 @@ export async function testDatamaxConnection(): Promise<{ message: string; balanc
     balance,
   };
 }
+
+export interface DatamaxAfaRegisterResponse {
+  success?: boolean;
+  message?: string;
+  order_id?: number | string;
+  registration_id?: number | string;
+}
+
+export async function registerDatamaxAfa(input: {
+  fullName: string;
+  phone: string;
+  ghanaCard: string;
+  location: string;
+  occupation?: string;
+}): Promise<DatamaxAfaRegisterResponse> {
+  if (!env.datamax.apiKey) {
+    throw new DatamaxError('Datamax API credentials not configured', 0);
+  }
+
+  const baseUrl = env.datamax.apiUrl.replace(/\/wp-json\/api\/v1\/?$/, '').replace(/\/$/, '');
+  const url = `${baseUrl}/wp-json/afa/v1/register`;
+
+  const payload = {
+    api_key: env.datamax.apiKey,
+    full_name: input.fullName.trim(),
+    phone: input.phone.trim(),
+    ghana_card: input.ghanaCard.trim().toUpperCase(),
+    location: input.location.trim(),
+    occupation: input.occupation?.trim() || 'Farmer',
+  };
+
+  let lastError: DatamaxError | null = null;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    if (attempt > 0) await sleep(1500 * attempt);
+
+    const res = await axios.request({
+      method: 'POST',
+      url,
+      headers: { 'Content-Type': 'application/json' },
+      data: payload,
+      timeout: 25000,
+      validateStatus: () => true,
+    });
+
+    if (res.status === 429) {
+      lastError = new DatamaxError('Datamax rate limit exceeded — retrying', 429);
+      continue;
+    }
+
+    if (res.status >= 200 && res.status < 300) {
+      return res.data as DatamaxAfaRegisterResponse;
+    }
+
+    const errBody = res.data as { message?: string; error?: string };
+    throw new DatamaxError(
+      errBody.message || errBody.error || `Datamax AFA API error (${res.status})`,
+      res.status
+    );
+  }
+
+  throw lastError || new DatamaxError('Datamax AFA API unavailable', 503);
+}

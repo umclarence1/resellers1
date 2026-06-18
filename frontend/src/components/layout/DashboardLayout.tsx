@@ -27,6 +27,7 @@ const adminLinks = [
 const agentLinks = [
   { href: '/agent', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/agent/purchase', label: 'Buy Data', icon: ShoppingCart },
+  { href: '/agent/afa', label: 'AFA Registration', icon: Package },
   { href: '/agent/bulk', label: 'Bulk Purchase', icon: Package },
   { href: '/agent/wallet', label: 'Wallet', icon: Wallet },
   { href: '/agent/orders', label: 'Orders', icon: ShoppingCart },

@@ -18,6 +18,10 @@ export function buildStoreHomePath(slug: string, extra?: Record<string, string>)
   return query ? `${base}?${query}` : base;
 }
 
+export function buildStoreAfaPath(slug: string) {
+  return `/store/${encodeURIComponent(slug)}/afa`;
+}
+
 export function buildStoreBuyPath(slug: string, network: string) {
   return `/store/${encodeURIComponent(slug)}/buy/${encodeURIComponent(network)}`;
 }

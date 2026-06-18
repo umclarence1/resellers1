@@ -1,11 +1,19 @@
 import mongoose, { Document, Schema } from 'mongoose';
-import { Network } from './Package';
+import { Network, ProductType } from './Package';
 import { generateOrderNumber } from '../utils/helpers';
 import { isValidOrderStatus, normalizeOrderStatus } from '../utils/orderStatus';
 
 export type OrderStatus = 'pending' | 'processing' | 'delivered' | 'failed' | 'refunded' | 'cancelled';
 export type OrderSource = 'agent' | 'agent_api' | 'reseller_store' | 'admin';
 export type FulfillmentProvider = 'smartdatahub' | 'datamax';
+
+export interface IAfaDetails {
+  fullName: string;
+  phone: string;
+  ghanaCard: string;
+  location: string;
+  occupation?: string;
+}
 
 export interface IOrderStatusHistory {
   step: string;
@@ -24,9 +32,11 @@ export interface IOrder extends Document {
   agentId?: mongoose.Types.ObjectId;
   customerEmail?: string;
   network: Network;
+  productType: ProductType;
   bundleSize: string;
   packageId: mongoose.Types.ObjectId;
   recipientPhone: string;
+  afaDetails?: IAfaDetails;
   costPrice: number;
   adminBasePrice?: number;
   sellingPrice: number;
@@ -94,9 +104,17 @@ const orderSchema = new Schema<IOrder>(
     agentId: { type: Schema.Types.ObjectId, ref: 'User' },
     customerEmail: String,
     network: { type: String, required: true },
+    productType: { type: String, enum: ['data', 'afa'], default: 'data' },
     bundleSize: { type: String, required: true },
     packageId: { type: Schema.Types.ObjectId, ref: 'Package', required: true },
     recipientPhone: { type: String, required: true },
+    afaDetails: {
+      fullName: String,
+      phone: String,
+      ghanaCard: String,
+      location: String,
+      occupation: String,
+    },
     costPrice: { type: Number, required: true },
     adminBasePrice: { type: Number },
     sellingPrice: { type: Number, required: true },

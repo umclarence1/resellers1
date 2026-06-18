@@ -9,7 +9,7 @@ import StoreContactLinks from '@/components/store/StoreContactLinks';
 import { FeatureCard, ServiceCard, InfoCard } from '@/components/ui/ModernCard';
 import { getNetworkImage } from '@/lib/network-images';
 import { useParams, Link, useLocation, useSearchParams, useNavigate } from 'react-router-dom';
-import { buildStoreBuyPath, buildStoreHomePath, persistStoreRef } from '@/lib/reseller-store-ref';
+import { buildStoreBuyPath, buildStoreHomePath, buildStoreAfaPath, persistStoreRef } from '@/lib/reseller-store-ref';
 
 interface StoreInfo {
   storeName: string;
@@ -18,6 +18,7 @@ interface StoreInfo {
   whatsapp: string;
   supportEmail: string;
   serviceImages: Array<{ network: string; imageUrl: string; isAvailable: boolean }>;
+  afa?: { inStock: boolean; imageUrl?: string };
 }
 
 export default function StoreHomePage() {
@@ -80,10 +81,12 @@ export default function StoreHomePage() {
   if (!store) return null;
 
   const buyPath = (network: string) => buildStoreBuyPath(slug, network);
+  const afaPath = buildStoreAfaPath(slug);
 
   const services = (store.serviceImages || []).filter((s) =>
     ['MTN', 'Telecel', 'AirtelTigo'].includes(s.network)
   );
+  const afaAvailable = store.afa?.inStock ?? false;
 
   return (
     <StoreLayout store={store} activeTab={activeTab} onTabChange={handleTabChange}>
@@ -126,6 +129,23 @@ export default function StoreHomePage() {
           <div className="max-w-6xl mx-auto px-4">
             <h2 className="text-xl sm:text-2xl font-bold text-center text-white mb-10">Our Services</h2>
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5 lg:gap-6">
+              {store.afa && (
+                <ServiceCard
+                  name="MTN AFA Registration"
+                  imageUrl={store.afa.imageUrl || '/images/afa.jpg'}
+                  badge={afaAvailable ? 'Available' : 'Unavailable'}
+                  badgeVariant={afaAvailable ? 'available' : 'unavailable'}
+                  action={
+                    afaAvailable ? (
+                      <Link to={afaPath} className="w-full">
+                        <Button className="w-full" size="sm">
+                          Register
+                        </Button>
+                      </Link>
+                    ) : undefined
+                  }
+                />
+              )}
               {services.map((service) => (
                 <ServiceCard
                   key={service.network}

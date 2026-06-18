@@ -61,6 +61,7 @@ import { creditWallet } from '../services/walletService';
 import { getResellerPoolSummary, resellerProfitRange } from '../services/resellerProfitService';
 import { getAdminDashboardStats } from '../services/adminDashboardService';
 import { getNetworkStockList, setNetworkStock } from '../services/networkStockService';
+import { getAfaStock, setAfaStock } from '../services/afaStockService';
 import { resetPlatformForProduction } from '../services/productionResetService';
 import { Network } from '../models/Package';
 
@@ -402,6 +403,25 @@ router.patch('/network-stock/:network', asyncHandler(async (req: AuthRequest, re
     success: true,
     data,
     message: inStock ? `${network} is now in stock` : `${network} marked out of stock`,
+  });
+}));
+
+router.get('/afa-stock', asyncHandler(async (_req, res) => {
+  const data = await getAfaStock();
+  res.json({ success: true, data });
+}));
+
+router.patch('/afa-stock', asyncHandler(async (req: AuthRequest, res) => {
+  const { inStock } = req.body as { inStock?: boolean };
+  if (typeof inStock !== 'boolean') {
+    throw new AppError('inStock must be true or false');
+  }
+  const data = await setAfaStock(inStock);
+  await logAudit(req, 'update', 'afa_stock', 'MTN AFA', { inStock });
+  res.json({
+    success: true,
+    data,
+    message: inStock ? 'AFA registration is now in stock' : 'AFA registration marked out of stock',
   });
 }));
 
