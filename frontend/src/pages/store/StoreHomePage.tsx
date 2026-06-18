@@ -129,12 +129,10 @@ export default function StoreHomePage() {
             <div className="max-w-xl mx-auto px-4 text-center">
               <h2 className="text-lg font-bold text-white mb-2">Want to sell data too?</h2>
               <p className="text-sm text-gray-400 mb-5">
-                Create your own store under {store.storeName} and set your prices on top of ours.
+                Create your own store and set your prices on top of ours.
               </p>
               <Link to={buildStoreBecomeResellerPath(slug)}>
-                <Button variant="outline" className="border-violet-400/50 text-violet-200 hover:bg-violet-500/10">
-                  Become a Reseller
-                </Button>
+                <Button variant="primary">Become a Reseller</Button>
               </Link>
             </div>
           </section>

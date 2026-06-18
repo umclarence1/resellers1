@@ -231,7 +231,7 @@ export default function AdminCheckersPage() {
               setFile(e.target.files?.[0] || null);
               setUploadError('');
             }}
-            className="block w-full text-sm text-gray-600 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-gray-100 file:text-gray-800"
+            className="block w-full text-sm text-gray-600 file:mr-3 file:py-2.5 file:px-4 file:rounded-lg file:border-0 file:bg-gold file:text-navy file:font-semibold file:cursor-pointer hover:file:bg-gold-hover file:transition-colors"
           />
           {file && <p className="text-xs text-gray-600">Selected: {file.name}</p>}
           <Button type="submit" loading={uploading} disabled={!file}>

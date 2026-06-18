@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Menu, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import StoreContactLinks from '@/components/store/StoreContactLinks';
 import ResellerWhatsAppFloat from '@/components/store/ResellerWhatsAppFloat';
+import Button from '@/components/ui/Button';
+import { buildStoreBecomeResellerPath } from '@/lib/reseller-store-ref';
 
 export type StoreTab = 'home' | 'services' | 'history' | 'faq' | 'contact';
 
@@ -60,7 +63,13 @@ export default function StoreLayout({
         <div className="max-w-6xl mx-auto px-4 h-full flex items-center justify-between gap-3">
           <span className="text-base sm:text-lg font-bold text-white truncate min-w-0">{displayName}</span>
 
-          <button
+          <div className="flex items-center gap-2 shrink-0">
+            <Link to={buildStoreBecomeResellerPath(store.slug)}>
+              <Button size="sm" variant="primary" className="whitespace-nowrap">
+                Become a Reseller
+              </Button>
+            </Link>
+            <button
             type="button"
             onClick={() => setMenuOpen((open) => !open)}
             className="p-2 text-white hover:text-gold transition shrink-0"
@@ -69,6 +78,7 @@ export default function StoreLayout({
           >
             {menuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
           </button>
+          </div>
         </div>
 
         {menuOpen && (
@@ -97,6 +107,15 @@ export default function StoreLayout({
                     </button>
                   </li>
                 ))}
+                <li className="border-t border-navy-border mt-1 pt-1">
+                  <Link
+                    to={buildStoreBecomeResellerPath(store.slug)}
+                    onClick={() => setMenuOpen(false)}
+                    className="block px-6 py-3.5 text-sm font-semibold text-gold hover:bg-gold/10 transition-colors"
+                  >
+                    Become a Reseller
+                  </Link>
+                </li>
               </ul>
             </nav>
           </>
