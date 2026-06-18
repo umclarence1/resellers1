@@ -11,7 +11,15 @@ import {
   getStoredUserJson,
 } from './secure-storage';
 
-const API_URL = import.meta.env.VITE_API_URL || '/api';
+const API_URL = (() => {
+  const raw = import.meta.env.VITE_API_URL?.trim();
+  if (!raw) return '/api';
+  if (raw.startsWith('http://') || raw.startsWith('https://')) {
+    const base = raw.replace(/\/$/, '');
+    return base.endsWith('/api') ? base : `${base}/api`;
+  }
+  return raw.startsWith('/') ? raw : `/${raw}`;
+})();
 
 migrateLegacyLocalStorageAuth();
 

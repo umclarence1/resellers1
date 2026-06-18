@@ -69,14 +69,27 @@ export default function AdminCheckersPage() {
       if (filterType) params.set('type', filterType);
       if (filterStatus) params.set('status', filterStatus);
       params.set('limit', '50');
-      const [summaryRes, listRes] = await Promise.all([
-        api.get('/admin/checkers/summary'),
-        api.get(`/admin/checkers?${params.toString()}`),
-      ]);
-      setSummary(summaryRes.data.data as CheckerSummary);
-      setItems(listRes.data.data as CheckerListItem[]);
+      const res = await api.get(`/admin/checkers/overview?${params.toString()}`);
+      const data = res.data.data as {
+        summary: CheckerSummary;
+        items: CheckerListItem[];
+      };
+      setSummary(data.summary);
+      setItems(data.items);
     } catch (err) {
-      setLoadError(err instanceof Error ? err.message : 'Failed to load checkers');
+      const axiosErr = err as { response?: { status?: number; data?: { message?: string } }; message?: string };
+      const status = axiosErr.response?.status;
+      const serverMsg = axiosErr.response?.data?.message;
+      if (status === 401 || status === 403) {
+        setLoadError('Your admin session expired. Sign out, then log in again at /login/admin.');
+      } else if (status === 404) {
+        setLoadError(
+          serverMsg ||
+            'Checker admin API is not available yet. Wait a minute for deployment to finish, then hard-refresh this page (Ctrl+F5).'
+        );
+      } else {
+        setLoadError(serverMsg || (err instanceof Error ? err.message : 'Failed to load checkers'));
+      }
     } finally {
       setPageLoading(false);
     }

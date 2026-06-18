@@ -436,6 +436,43 @@ router.get('/checkers/summary', asyncHandler(async (_req, res) => {
   res.json({ success: true, data });
 }));
 
+/** Single payload for admin Results Checkers page (summary + inventory list). */
+router.get('/checkers/overview', asyncHandler(async (req, res) => {
+  const type = req.query.type ? normalizeCheckerType(String(req.query.type)) : undefined;
+  const status = req.query.status === 'assigned' || req.query.status === 'available'
+    ? req.query.status
+    : undefined;
+  const page = Math.max(1, parseInt(String(req.query.page || '1'), 10));
+  const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit || '25'), 10)));
+  const filter: Record<string, unknown> = {};
+  if (type) filter.type = type;
+  if (status) filter.status = status;
+
+  const [summary, items, total] = await Promise.all([
+    getCheckerSummary(),
+    ResultChecker.find(filter)
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(limit)
+      .select('type serial pin status orderId assignedAt uploadBatchId createdAt'),
+    ResultChecker.countDocuments(filter),
+  ]);
+
+  res.set('Cache-Control', 'no-store');
+  res.json({
+    success: true,
+    data: {
+      summary,
+      items: items.map((item) => ({
+        ...item.toObject(),
+        serial: item.status === 'assigned' ? item.serial : maskSerial(item.serial),
+        pin: item.status === 'assigned' ? '****' : undefined,
+      })),
+      meta: { page, limit, total },
+    },
+  });
+}));
+
 router.patch('/checkers/stock/:type', asyncHandler(async (req: AuthRequest, res) => {
   const type = normalizeCheckerType(req.params.type as string);
   const { inStock } = req.body as { inStock?: boolean };
