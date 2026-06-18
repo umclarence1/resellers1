@@ -129,23 +129,6 @@ export default function StoreHomePage() {
           <div className="max-w-6xl mx-auto px-4">
             <h2 className="text-xl sm:text-2xl font-bold text-center text-white mb-10">Our Services</h2>
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5 lg:gap-6">
-              {store.afa && (
-                <ServiceCard
-                  name="MTN AFA Registration"
-                  imageUrl={store.afa.imageUrl || '/images/afa.jpg'}
-                  badge={afaAvailable ? 'Available' : 'Unavailable'}
-                  badgeVariant={afaAvailable ? 'available' : 'unavailable'}
-                  action={
-                    afaAvailable ? (
-                      <Link to={afaPath} className="w-full">
-                        <Button className="w-full" size="sm">
-                          Register
-                        </Button>
-                      </Link>
-                    ) : undefined
-                  }
-                />
-              )}
               {services.map((service) => (
                 <ServiceCard
                   key={service.network}
@@ -164,6 +147,23 @@ export default function StoreHomePage() {
                   }
                 />
               ))}
+              {store.afa && (
+                <ServiceCard
+                  name="MTN AFA Registration"
+                  imageUrl={store.afa.imageUrl || '/images/afa.jpg'}
+                  badge={afaAvailable ? 'Available' : 'Unavailable'}
+                  badgeVariant={afaAvailable ? 'available' : 'unavailable'}
+                  action={
+                    afaAvailable ? (
+                      <Link to={afaPath} className="w-full">
+                        <Button className="w-full" size="sm">
+                          Register
+                        </Button>
+                      </Link>
+                    ) : undefined
+                  }
+                />
+              )}
             </div>
           </div>
         </section>
