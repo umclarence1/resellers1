@@ -12,7 +12,13 @@ import { appendAuditLog } from './immutableAuditService';
 
 export type PaystackFulfillmentResult =
   | { type: 'wallet_deposit'; alreadyProcessed: boolean }
-  | { type: 'customer_purchase'; storeSlug?: string; orderId?: string; alreadyProcessed: boolean }
+  | {
+      type: 'customer_purchase';
+      storeSlug?: string;
+      orderId?: string;
+      productType?: string;
+      alreadyProcessed: boolean;
+    }
   | { type: 'pool_deposit'; alreadyProcessed: boolean; amount?: number }
   | { type: 'unknown' };
 
@@ -105,6 +111,7 @@ export async function processPaystackSuccess(
         type: 'customer_purchase',
         storeSlug: metadata.storeSlug as string | undefined,
         orderId: existing.orderId,
+        productType: existing.productType,
         alreadyProcessed: true,
       };
     }
@@ -114,6 +121,7 @@ export async function processPaystackSuccess(
       type: 'customer_purchase',
       storeSlug: metadata.storeSlug as string | undefined,
       orderId: order.orderId,
+      productType: order.productType,
       alreadyProcessed: false,
     };
   }

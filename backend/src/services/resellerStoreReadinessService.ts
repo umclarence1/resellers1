@@ -16,6 +16,7 @@ export async function getResellerPricingStatus(user: IUser) {
   const packages = await Package.find({
     isEnabled: true,
     network: { $in: RESELLER_STORE_NETWORKS },
+    productType: 'data',
   }).select('_id network');
 
   const byNetwork = new Map<string, Array<{ _id: { toString(): string }; network: string }>>();

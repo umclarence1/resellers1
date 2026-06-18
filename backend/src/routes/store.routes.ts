@@ -12,6 +12,15 @@ import { assertNetworkInStock } from '../services/networkStockService';
 import { assertAfaInStock, getAfaStock } from '../services/afaStockService';
 import { getAfaPackage } from '../services/afaPackageService';
 import { isAfaProduct, AFA_CHECK_USSD, AFA_PROCESSING_HOURS } from '../config/afa';
+import {
+  CHECKER_DEFAULT_IMAGE,
+  CheckerType,
+  checkerTypeLabel,
+  normalizeCheckerType,
+  isCheckerProduct,
+} from '../config/checker';
+import { getAllCheckerStock } from '../services/checkerStockService';
+import { getCheckerPackage } from '../services/checkerPackageService';
 import { validateAfaDetails } from '../services/orderService';
 import { env } from '../config/env';
 import { otpLimiter, purchaseLimiter } from '../middleware/rateLimiter';
@@ -48,6 +57,7 @@ router.get('/:slug', asyncHandler(async (req, res) => {
 
   const settings = await getSettings();
   const afaStock = await getAfaStock();
+  const checkerStock = await getAllCheckerStock();
 
   res.json({
     success: true,
@@ -66,6 +76,12 @@ router.get('/:slug', asyncHandler(async (req, res) => {
         imageUrl: afaStock.imageUrl,
         processingHours: AFA_PROCESSING_HOURS,
         checkUssd: AFA_CHECK_USSD,
+      },
+      checker: {
+        imageUrl: CHECKER_DEFAULT_IMAGE,
+        bece: { inStock: checkerStock[0].inStock },
+        wassce: { inStock: checkerStock[1].inStock },
+        inStock: checkerStock.some((s) => s.inStock),
       },
     },
   });
@@ -171,6 +187,139 @@ router.get('/:slug/afa', asyncHandler(async (req, res) => {
       imageUrl: stock.imageUrl,
       processingHours: AFA_PROCESSING_HOURS,
       checkUssd: AFA_CHECK_USSD,
+    },
+  });
+}));
+
+async function buildCheckerOffer(
+  reseller: NonNullable<Awaited<ReturnType<typeof User.findOne>>>,
+  type: CheckerType
+) {
+  const [stockRow, pkg, settings] = await Promise.all([
+    getAllCheckerStock().then((rows) => rows.find((r) => r.type === type)!),
+    getCheckerPackage(type),
+    getSettings(),
+  ]);
+  if (!pkg) throw new AppError(`${checkerTypeLabel(type)} checker is not configured`, 503);
+
+  const customPrice = reseller!.resellerStore?.customPrices.get(pkg._id.toString());
+  const price = customPrice ?? pkg.resellerBasePrice;
+  const paystackChargePercent = settings.paystackChargePercent ?? 2;
+  const processingFee = roundMoney(price * (paystackChargePercent / 100));
+  const total = roundMoney(price + processingFee);
+
+  return {
+    type,
+    packageId: pkg._id,
+    bundleSize: pkg.bundleSize,
+    price,
+    processingFee,
+    total,
+    paystackChargePercent,
+    basePrice: pkg.resellerBasePrice,
+    maxPrice: pkg.maxSellingPrice,
+    inStock: stockRow.inStock,
+    availableCount: stockRow.availableCount,
+  };
+}
+
+router.get('/:slug/checker', asyncHandler(async (req, res) => {
+  const reseller = await User.findOne({
+    'resellerStore.slug': req.params.slug,
+    'resellerStore.isActive': true,
+    role: 'reseller',
+  });
+  if (!reseller) throw new AppError('Store not found', 404);
+
+  const [bece, wassce] = await Promise.all([
+    buildCheckerOffer(reseller, 'bece'),
+    buildCheckerOffer(reseller, 'wassce'),
+  ]);
+
+  res.json({
+    success: true,
+    data: {
+      imageUrl: CHECKER_DEFAULT_IMAGE,
+      bece,
+      wassce,
+    },
+  });
+}));
+
+router.post('/:slug/checker/purchase/init', purchaseLimiter, blockStorePricing, asyncHandler(async (req, res) => {
+  const { type, email, phone } = req.body as { type?: string; email?: string; phone?: string };
+  if (!type || !email?.trim() || !phone?.trim()) {
+    throw new AppError('Checker type, email, and phone are required');
+  }
+
+  const checkerType = normalizeCheckerType(type);
+  const reseller = await User.findOne({
+    'resellerStore.slug': req.params.slug,
+    'resellerStore.isActive': true,
+    role: 'reseller',
+  });
+  if (!reseller) throw new AppError('Store not found', 404);
+
+  const offer = await buildCheckerOffer(reseller, checkerType);
+  if (!offer.inStock) {
+    throw new AppError(`${checkerTypeLabel(checkerType)} checkers are out of stock`, 503);
+  }
+
+  const recipientPhone = phone.replace(/\D/g, '').slice(0, 10);
+  if (!isValidGhanaPhone(recipientPhone)) {
+    throw new AppError('Phone must be 10 digits starting with 0');
+  }
+
+  const reference = `CUS-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
+
+  const payment = await initializePayment(email.trim().toLowerCase(), Math.round(offer.total * 100), {
+    type: 'customer_purchase',
+    resellerId: reseller._id.toString(),
+    packageId: offer.packageId.toString(),
+    recipientPhone,
+    customerEmail: email.trim().toLowerCase(),
+    sellingPrice: offer.price,
+    processingFee: offer.processingFee,
+    expectedTotal: offer.total,
+    reference,
+    storeSlug: req.params.slug,
+    productKind: 'checker',
+  });
+
+  res.json({
+    success: true,
+    data: {
+      authorizationUrl: payment.authorization_url,
+      reference: payment.reference,
+    },
+  });
+}));
+
+router.get('/checker-order/:orderId', asyncHandler(async (req, res) => {
+  const { email } = req.query as { email?: string };
+  if (!email?.trim()) throw new AppError('Email is required');
+
+  const order = await Order.findOne({ orderId: req.params.orderId });
+  if (!order) throw new AppError('Order not found', 404);
+  if (!isCheckerProduct(order.productType, order.bundleSize)) {
+    throw new AppError('Not a checker order', 400);
+  }
+  if (order.customerEmail?.toLowerCase() !== email.trim().toLowerCase()) {
+    throw new AppError('Email does not match this order', 403);
+  }
+  if (order.status !== 'delivered' || !order.checkerDetails) {
+    throw new AppError('Checker is not ready yet. Check your email shortly.', 404);
+  }
+
+  res.json({
+    success: true,
+    data: {
+      orderId: order.orderId,
+      type: order.checkerDetails.type,
+      bundleSize: order.bundleSize,
+      serial: order.checkerDetails.serial,
+      pin: order.checkerDetails.pin,
+      status: order.status,
     },
   });
 }));

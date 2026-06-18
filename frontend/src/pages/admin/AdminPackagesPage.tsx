@@ -24,6 +24,7 @@ type PackageRow = {
   _id: string;
   network: string;
   bundleSize: string;
+  productType?: string;
   costPrice: number;
   datamaxCostPrice?: number | null;
   AgentPrice: number;
@@ -250,7 +251,11 @@ export default function AdminPackagesPage() {
     }
   };
 
-  const filtered = filter ? packages.filter((p) => p.network === filter) : packages;
+  const filtered = filter
+    ? filter === 'Checkers'
+      ? packages.filter((p) => p.productType === 'checker')
+      : packages.filter((p) => p.network === filter && p.productType !== 'checker')
+    : packages;
   const networks = [...new Set(packages.map((p) => p.network))];
 
   if (loading || !user) return null;
@@ -325,6 +330,9 @@ export default function AdminPackagesPage() {
         {networks.map((n) => (
           <Button key={n} size="sm" variant={filter === n ? 'primary' : 'outline'} onClick={() => setFilter(n)}>{n}</Button>
         ))}
+        <Button size="sm" variant={filter === 'Checkers' ? 'primary' : 'outline'} onClick={() => setFilter('Checkers')}>
+          Checkers
+        </Button>
       </div>
 
       {pageLoading ? (

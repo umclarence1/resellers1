@@ -1,5 +1,6 @@
 import mongoose, { Document, Schema } from 'mongoose';
 import { Network, ProductType } from './Package';
+import { CheckerType } from '../config/checker';
 import { generateOrderNumber } from '../utils/helpers';
 import { isValidOrderStatus, normalizeOrderStatus } from '../utils/orderStatus';
 
@@ -13,6 +14,12 @@ export interface IAfaDetails {
   ghanaCard: string;
   location: string;
   occupation?: string;
+}
+
+export interface ICheckerDetails {
+  type: CheckerType;
+  serial: string;
+  pin: string;
 }
 
 export interface IOrderStatusHistory {
@@ -37,6 +44,7 @@ export interface IOrder extends Document {
   packageId: mongoose.Types.ObjectId;
   recipientPhone: string;
   afaDetails?: IAfaDetails;
+  checkerDetails?: ICheckerDetails;
   costPrice: number;
   adminBasePrice?: number;
   sellingPrice: number;
@@ -104,7 +112,7 @@ const orderSchema = new Schema<IOrder>(
     agentId: { type: Schema.Types.ObjectId, ref: 'User' },
     customerEmail: String,
     network: { type: String, required: true },
-    productType: { type: String, enum: ['data', 'afa'], default: 'data' },
+    productType: { type: String, enum: ['data', 'afa', 'checker'], default: 'data' },
     bundleSize: { type: String, required: true },
     packageId: { type: Schema.Types.ObjectId, ref: 'Package', required: true },
     recipientPhone: { type: String, required: true },
@@ -114,6 +122,11 @@ const orderSchema = new Schema<IOrder>(
       ghanaCard: String,
       location: String,
       occupation: String,
+    },
+    checkerDetails: {
+      type: { type: String, enum: ['bece', 'wassce'] },
+      serial: String,
+      pin: String,
     },
     costPrice: { type: Number, required: true },
     adminBasePrice: { type: Number },

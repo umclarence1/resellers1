@@ -32,7 +32,7 @@ import {
 import { requireAdminOtp } from '../middleware/requireAdminPassword';
 import { otpLimiter } from '../middleware/rateLimiter';
 import { createAndSendAdminActionOtp } from '../services/adminActionOtpService';
-import { upload } from '../middleware/upload';
+import { upload, uploadSpreadsheet } from '../middleware/upload';
 import { validatePasswordStrength } from '../utils/password';
 import { env } from '../config/env';
 import { initPoolDepositPayment } from '../services/paystackPaymentService';
@@ -63,6 +63,11 @@ import { getResellerPoolSummary, resellerProfitRange } from '../services/reselle
 import { getAdminDashboardStats } from '../services/adminDashboardService';
 import { getNetworkStockList, setNetworkStock } from '../services/networkStockService';
 import { getAfaStock, setAfaStock } from '../services/afaStockService';
+import { CheckerType, checkerTypeLabel, normalizeCheckerType } from '../config/checker';
+import { getCheckerSummary, setCheckerStock } from '../services/checkerStockService';
+import { importCheckerInventory, maskSerial } from '../services/checkerInventoryService';
+import { ResultChecker } from '../models/ResultChecker';
+import fs from 'fs';
 import { resetPlatformForProduction } from '../services/productionResetService';
 import { Network } from '../models/Package';
 
@@ -423,6 +428,81 @@ router.patch('/afa-stock', asyncHandler(async (req: AuthRequest, res) => {
     success: true,
     data,
     message: inStock ? 'AFA registration is now in stock' : 'AFA registration marked out of stock',
+  });
+}));
+
+router.get('/checkers/summary', asyncHandler(async (_req, res) => {
+  const data = await getCheckerSummary();
+  res.json({ success: true, data });
+}));
+
+router.patch('/checkers/stock/:type', asyncHandler(async (req: AuthRequest, res) => {
+  const type = normalizeCheckerType(req.params.type as string);
+  const { inStock } = req.body as { inStock?: boolean };
+  if (typeof inStock !== 'boolean') {
+    throw new AppError('inStock must be true or false');
+  }
+  const data = await setCheckerStock(type, inStock);
+  await logAudit(req, 'update', 'checker_stock', checkerTypeLabel(type), { inStock });
+  res.json({
+    success: true,
+    data,
+    message: inStock
+      ? `${checkerTypeLabel(type)} checkers are now in stock`
+      : `${checkerTypeLabel(type)} checkers marked out of stock`,
+  });
+}));
+
+router.post(
+  '/checkers/upload',
+  uploadSpreadsheet.single('file'),
+  asyncHandler(async (req: AuthRequest, res) => {
+    const type = normalizeCheckerType(String(req.body.type || ''));
+    if (!req.file) throw new AppError('Excel file is required');
+
+    try {
+      const buffer = fs.readFileSync(req.file.path);
+      const result = await importCheckerInventory(type, buffer);
+      await logAudit(req, 'upload', 'checker_inventory', checkerTypeLabel(type), result);
+      res.json({
+        success: true,
+        data: result,
+        message: `Imported ${result.imported} ${checkerTypeLabel(type)} checker(s)`,
+      });
+    } finally {
+      fs.unlink(req.file.path, () => undefined);
+    }
+  })
+);
+
+router.get('/checkers', asyncHandler(async (req, res) => {
+  const type = req.query.type ? normalizeCheckerType(String(req.query.type)) : undefined;
+  const status = req.query.status === 'assigned' || req.query.status === 'available'
+    ? req.query.status
+    : undefined;
+  const page = Math.max(1, parseInt(String(req.query.page || '1'), 10));
+  const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit || '25'), 10)));
+  const filter: Record<string, unknown> = {};
+  if (type) filter.type = type;
+  if (status) filter.status = status;
+
+  const [items, total] = await Promise.all([
+    ResultChecker.find(filter)
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(limit)
+      .select('type serial pin status orderId assignedAt uploadBatchId createdAt'),
+    ResultChecker.countDocuments(filter),
+  ]);
+
+  res.json({
+    success: true,
+    data: items.map((item) => ({
+      ...item.toObject(),
+      serial: item.status === 'assigned' ? item.serial : maskSerial(item.serial),
+      pin: item.status === 'assigned' ? '****' : undefined,
+    })),
+    meta: { page, limit, total },
   });
 }));
 

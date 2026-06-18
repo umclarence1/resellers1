@@ -39,8 +39,19 @@ export interface IAfaSettings {
   imageUrl?: string;
 }
 
+export interface ICheckerTypeSettings {
+  inStock: boolean;
+  imageUrl?: string;
+}
+
+export interface ICheckerSettings {
+  bece: ICheckerTypeSettings;
+  wassce: ICheckerTypeSettings;
+}
+
 export interface ISetting extends Document {
   afaSettings?: IAfaSettings;
+  checkerSettings?: ICheckerSettings;
   processingFeePercent: number;
   paystackChargePercent: number;
   minWithdrawal: number;
@@ -58,6 +69,16 @@ const settingSchema = new Schema<ISetting>(
     afaSettings: {
       inStock: { type: Boolean, default: true },
       imageUrl: String,
+    },
+    checkerSettings: {
+      bece: {
+        inStock: { type: Boolean, default: false },
+        imageUrl: String,
+      },
+      wassce: {
+        inStock: { type: Boolean, default: false },
+        imageUrl: String,
+      },
     },
     processingFeePercent: { type: Number, default: 2 },
     paystackChargePercent: { type: Number, default: 2 },

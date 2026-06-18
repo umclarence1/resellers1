@@ -4,11 +4,17 @@ import { Card } from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 import { CheckCircle, XCircle, Loader2 } from 'lucide-react';
 import { useSearchParams, Link, useNavigate } from 'react-router-dom';
-import { buildStoreHomePath } from '@/lib/reseller-store-ref';
+import { buildStoreHomePath, buildStoreCheckerSuccessPath } from '@/lib/reseller-store-ref';
 
 type Fulfillment =
   | { type: 'wallet_deposit'; alreadyProcessed?: boolean }
-  | { type: 'customer_purchase'; storeSlug?: string; orderId?: string; alreadyProcessed?: boolean }
+  | {
+      type: 'customer_purchase';
+      storeSlug?: string;
+      orderId?: string;
+      productType?: string;
+      alreadyProcessed?: boolean;
+    }
   | { type: 'pool_deposit'; alreadyProcessed?: boolean; amount?: number }
   | { type: 'unknown' };
 
@@ -45,11 +51,23 @@ function PaymentCallback() {
           setTimeout(() => navigate('/admin/settings?poolFunded=1'), 2500);
         }
         if (ok && payment.fulfillment?.type === 'customer_purchase' && payment.fulfillment.storeSlug) {
-          setTimeout(
-            () =>
-              navigate(buildStoreHomePath(payment.fulfillment.storeSlug, { tab: 'history', paid: '1' })),
-            2500
-          );
+          const f = payment.fulfillment;
+          if (f.productType === 'checker' && f.orderId) {
+            const email = sessionStorage.getItem('checker_checkout_email') || '';
+            setTimeout(
+              () =>
+                navigate(
+                  buildStoreCheckerSuccessPath(f.storeSlug!, f.orderId!, email || undefined)
+                ),
+              2000
+            );
+          } else {
+            setTimeout(
+              () =>
+                navigate(buildStoreHomePath(f.storeSlug!, { tab: 'history', paid: '1' })),
+              2500
+            );
+          }
         }
       })
       .catch((err: Error) => {
@@ -93,7 +111,12 @@ function PaymentCallback() {
                 Your Agent wallet has been credited. Redirecting to wallet...
               </p>
             )}
-            {fulfillment?.type === 'customer_purchase' && (
+            {fulfillment?.type === 'customer_purchase' && fulfillment.productType === 'checker' && (
+              <p className="text-gray-500 mb-6">
+                Your checker is ready. Redirecting to show your serial and PIN...
+              </p>
+            )}
+            {fulfillment?.type === 'customer_purchase' && fulfillment.productType !== 'checker' && (
               <p className="text-gray-500 mb-6">
                 Your data order{orderId ? ` (${orderId})` : ''} is being processed.
                 {storeSlug && ' Redirecting to order history...'}

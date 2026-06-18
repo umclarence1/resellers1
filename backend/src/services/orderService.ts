@@ -13,7 +13,10 @@ import { getAdminBasePrice, computeResellerOrderProfit } from './profitFormulas'
 import { assertNetworkInStock } from './networkStockService';
 import { assertAfaInStock } from './afaStockService';
 import { isAfaProduct, AFA_CHECK_USSD, AFA_PROCESSING_HOURS } from '../config/afa';
+import { isCheckerProduct, checkerTypeFromBundle } from '../config/checker';
 import { resolveOrderApiCost } from '../config/datamaxPrices';
+import { assertCheckerInStock } from './checkerStockService';
+import { assignCheckerToOrder, deliverCheckerNotifications } from './checkerFulfillmentService';
 import { isValidGhanaCard, normalizeGhanaCard } from '../utils/ghanaCard';
 import { resolveFulfillmentProvider, resolveAfaFulfillmentProvider } from './settingsService';
 import { getAgentPrice } from './agentPricingService';
@@ -141,10 +144,27 @@ export const createOrder = async (input: CreateOrderInput) => {
   }
 
   const isAfa = isAfaProduct(pkg.productType, pkg.bundleSize);
+  const isChecker = isCheckerProduct(pkg.productType, pkg.bundleSize);
   let recipientPhone: string;
   let afaDetails: IAfaDetails | undefined;
 
-  if (isAfa) {
+  if (isChecker) {
+    const checkerType = checkerTypeFromBundle(pkg.bundleSize);
+    if (!checkerType) {
+      throw new AppError('Invalid checker package');
+    }
+    if (!input.customerEmail?.trim()) {
+      throw new AppError('Email is required for checker purchase');
+    }
+    if (!input.recipientPhone) {
+      throw new AppError('Phone number is required');
+    }
+    recipientPhone = normalizeGhanaPhone(input.recipientPhone);
+    if (!isValidGhanaPhone(recipientPhone)) {
+      throw new AppError('Phone must be 10 digits starting with 0');
+    }
+    await assertCheckerInStock(checkerType);
+  } else if (isAfa) {
     await assertAfaInStock();
     afaDetails = validateAfaDetails(
       input.afaDetails ?? {
@@ -167,9 +187,11 @@ export const createOrder = async (input: CreateOrderInput) => {
   }
 
   const settings = await getSettings();
-  const fulfillmentProvider = isAfa
-    ? await resolveAfaFulfillmentProvider()
-    : await resolveFulfillmentProvider(pkg.network);
+  const fulfillmentProvider = isChecker
+    ? null
+    : isAfa
+      ? await resolveAfaFulfillmentProvider()
+      : await resolveFulfillmentProvider(pkg.network);
   const apiCost = resolveOrderApiCost({
     network: pkg.network,
     bundleSize: pkg.bundleSize,
@@ -220,7 +242,13 @@ export const createOrder = async (input: CreateOrderInput) => {
 
   const orderNumber = generateOrderNumber();
   const orderStatus: OrderStatus =
-    input.source === 'reseller_store' && input.paystackReference ? 'processing' : 'pending';
+    isChecker
+      ? 'processing'
+      : input.source === 'reseller_store' && input.paystackReference
+        ? 'processing'
+        : 'pending';
+
+  const productType: ProductType = isChecker ? 'checker' : isAfa ? 'afa' : 'data';
 
   const orderPayload = {
     orderId: orderNumber,
@@ -230,7 +258,7 @@ export const createOrder = async (input: CreateOrderInput) => {
     resellerId: input.resellerId,
     customerEmail: input.customerEmail,
     network: pkg.network,
-    productType: (isAfa ? 'afa' : 'data') as ProductType,
+    productType,
     bundleSize: pkg.bundleSize,
     packageId: pkg._id,
     recipientPhone,
@@ -261,7 +289,9 @@ export const createOrder = async (input: CreateOrderInput) => {
           'purchase',
           isAfa
             ? `AFA registration: ${afaDetails!.fullName} (${recipientPhone})`
-            : `Data purchase: ${pkg.network} ${pkg.bundleSize} to ${recipientPhone}`,
+            : isChecker
+              ? `${pkg.bundleSize} checker to ${recipientPhone}`
+              : `Data purchase: ${pkg.network} ${pkg.bundleSize} to ${recipientPhone}`,
           orderRef,
           { packageId: pkg._id.toString() },
           session
@@ -294,7 +324,21 @@ export const createOrder = async (input: CreateOrderInput) => {
     throw toOrderCreationError(err);
   }
 
-  if (env.fulfillment.enabled || env.datamax.enabled) {
+  if (isChecker) {
+    try {
+      const checker = await assignCheckerToOrder(order);
+      await deliverCheckerNotifications(order, checker);
+    } catch (err) {
+      console.error('Checker fulfillment failed:', err);
+      await applyOrderStatusUpdate(order, {
+        status: 'failed',
+        providerStatus: 'failed',
+        stepLabel: 'Checker Unavailable',
+        stepMessage: err instanceof AppError ? err.message : 'Could not assign checker',
+      });
+      throw err;
+    }
+  } else if (env.fulfillment.enabled || env.datamax.enabled) {
     await submitOrderToProvider(order);
   } else if (env.devAutoDeliver) {
   // Simulate order processing (local dev only)

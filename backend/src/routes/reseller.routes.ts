@@ -13,6 +13,7 @@ import { validateResellerPrice } from '../services/orderService';
 import { computeResellerProfit, resellerProfitRange } from '../services/resellerProfitService';
 import { getNetworkStockList } from '../services/networkStockService';
 import { getAfaStock } from '../services/afaStockService';
+import { getAllCheckerStock } from '../services/checkerStockService';
 import { getSettings } from '../services/settingsService';
 import { canSubmitComplaint, isComplaintsEnabledForUser } from '../services/settingsService';
 import {
@@ -198,7 +199,15 @@ router.get('/prices', asyncHandler(async (req: AuthRequest, res) => {
   const packages = await Package.find({
     isEnabled: true,
     network: { $in: RESELLER_STORE_NETWORKS },
+    productType: 'data',
   }).sort({ network: 1, sortOrder: 1 });
+
+  const checkerPackages = await Package.find({
+    isEnabled: true,
+    productType: 'checker',
+  }).sort({ bundleSize: 1 });
+
+  const checkerStock = await getAllCheckerStock();
 
   const user = await User.findById(req.user!._id);
   if (!user?.resellerStore) throw new AppError('Store not found');
@@ -212,6 +221,7 @@ router.get('/prices', asyncHandler(async (req: AuthRequest, res) => {
       _id: pkg._id,
       network: pkg.network,
       bundleSize: pkg.bundleSize,
+      productType: pkg.productType,
       resellerBasePrice: pkg.resellerBasePrice,
       maxSellingPrice: pkg.maxSellingPrice,
       myPrice,
@@ -220,9 +230,28 @@ router.get('/prices', asyncHandler(async (req: AuthRequest, res) => {
       ...resellerProfitRange(pkg.resellerBasePrice, pkg.maxSellingPrice),
     };
   });
+
+  const checkerData = checkerPackages.map((pkg) => {
+    const custom = getCustomPrice(user, pkg._id.toString());
+    const myPrice = custom ?? pkg.resellerBasePrice;
+    return {
+      _id: pkg._id,
+      network: pkg.network,
+      bundleSize: pkg.bundleSize,
+      productType: pkg.productType,
+      resellerBasePrice: pkg.resellerBasePrice,
+      maxSellingPrice: pkg.maxSellingPrice,
+      myPrice,
+      hasCustomPrice: custom !== undefined,
+      profitPerSale: computeResellerProfit(myPrice, pkg.resellerBasePrice),
+      ...resellerProfitRange(pkg.resellerBasePrice, pkg.maxSellingPrice),
+    };
+  });
+
   res.json({
     success: true,
     data,
+    checkerPackages: checkerData,
     meta: {
       pricesReady: pricing.pricesReady,
       configuredCount: pricing.configuredCount,
@@ -230,6 +259,7 @@ router.get('/prices', asyncHandler(async (req: AuthRequest, res) => {
       networksMissing: pricing.networksMissing,
       networkStock: stock,
       afaStock,
+      checkerStock,
     },
   });
 }));
@@ -238,7 +268,11 @@ router.put('/prices/:packageId', asyncHandler(async (req: AuthRequest, res) => {
   const { price } = req.body;
   const pkg = await Package.findById(req.params.packageId);
   if (!pkg) throw new AppError('Package not found');
-  if (!RESELLER_STORE_NETWORKS.includes(pkg.network as (typeof RESELLER_STORE_NETWORKS)[number])) {
+  const isChecker = pkg.productType === 'checker';
+  if (
+    !isChecker &&
+    !RESELLER_STORE_NETWORKS.includes(pkg.network as (typeof RESELLER_STORE_NETWORKS)[number])
+  ) {
     throw new AppError('This package cannot be priced');
   }
 

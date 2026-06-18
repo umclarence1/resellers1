@@ -12,6 +12,7 @@
     "scan:secrets": "node scripts/secret-scan.js",
     "test:order-number": "npm run build && node --test dist/tests/orderNumber.test.js",
     "test:fulfillment": "npm run build && node --test dist/tests/fulfillmentAndPricing.test.js",
+    "test:checker": "npm run build && node --test dist/tests/checkerInventory.test.js",
     "migrate:order-numbers": "npm run build && node dist/scripts/migrate-order-numbers.js",
     "reset:production": "npm run build && node dist/scripts/production-reset.js"
   },
@@ -38,7 +39,8 @@
     "nodemailer": "^8.0.10",
     "rate-limit-redis": "^5.0.0",
     "speakeasy": "^2.0.0",
-    "uuid": "^14.0.0"
+    "uuid": "^14.0.0",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
@@ -48,7 +50,7 @@
     "@types/hpp": "^0.2.7",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/multer": "^2.1.0",
-    "@types/node": "^25.9.2",
+    "@types/node": "^25.9.3",
     "@types/nodemailer": "^8.0.0",
     "@types/speakeasy": "^2.0.10",
     "@types/uuid": "^10.0.0",

@@ -22,6 +22,16 @@ export function buildStoreAfaPath(slug: string) {
   return `/store/${encodeURIComponent(slug)}/afa`;
 }
 
+export function buildStoreCheckerPath(slug: string) {
+  return `/store/${encodeURIComponent(slug)}/checker`;
+}
+
+export function buildStoreCheckerSuccessPath(slug: string, orderId: string, email?: string) {
+  const params = new URLSearchParams({ orderId });
+  if (email) params.set('email', email);
+  return `/store/${encodeURIComponent(slug)}/checker/success?${params.toString()}`;
+}
+
 export function buildStoreBuyPath(slug: string, network: string) {
   return `/store/${encodeURIComponent(slug)}/buy/${encodeURIComponent(network)}`;
 }

@@ -14,6 +14,7 @@ import { migrateFulfillmentSettings } from './settingsService';
 import { reconcileLegacyPendingWithdrawals } from './withdrawalService';
 import { migrateOrderNumbers } from './orderMigrationService';
 import { ensureAfaPackage } from './afaPackageService';
+import { ensureCheckerPackages } from './checkerPackageService';
 import {
   backfillPackageProductTypes,
   dataPackageFilter,
@@ -173,6 +174,7 @@ export const seedDatabase = async (): Promise<void> => {
 
   await safeStartupStep('ensureNetworkPackages', ensureNetworkPackages);
   await safeStartupStep('ensureAfaPackage', ensureAfaPackage);
+  await safeStartupStep('ensureCheckerPackages', ensureCheckerPackages);
   await safeStartupStep('reconcileLegacyPendingWithdrawals', reconcileLegacyPendingWithdrawals);
   await safeStartupStep('migrateOrderNumbers', migrateOrderNumbers);
 

@@ -31,7 +31,7 @@ const storage = multer.diskStorage({
     }
   },
   filename: (_req, file, cb) => {
-    const ext = MIME_TO_EXT[file.mimetype] || '.bin';
+    const ext = MIME_TO_EXT[file.mimetype] || path.extname(file.originalname) || '.bin';
     const unique = `${Date.now()}-${crypto.randomBytes(8).toString('hex')}`;
     cb(null, `${unique}${ext}`);
   },
@@ -45,6 +45,24 @@ export const upload = multer({
       cb(null, true);
     } else {
       cb(new Error('Only JPEG, PNG, WebP, and GIF images are allowed'));
+    }
+  },
+});
+
+export const uploadSpreadsheet = multer({
+  storage,
+  limits: { fileSize: env.maxFileSize, files: 1 },
+  fileFilter: (_req, file, cb) => {
+    const allowed = [
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/vnd.ms-excel',
+      'text/csv',
+    ];
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (allowed.includes(file.mimetype) || ['.xlsx', '.xls', '.csv'].includes(ext)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only Excel (.xlsx, .xls) or CSV files are allowed'));
     }
   },
 });

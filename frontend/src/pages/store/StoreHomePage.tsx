@@ -9,7 +9,7 @@ import StoreContactLinks from '@/components/store/StoreContactLinks';
 import { FeatureCard, ServiceCard, InfoCard } from '@/components/ui/ModernCard';
 import { getNetworkImage } from '@/lib/network-images';
 import { useParams, Link, useLocation, useSearchParams, useNavigate } from 'react-router-dom';
-import { buildStoreBuyPath, buildStoreHomePath, buildStoreAfaPath, persistStoreRef } from '@/lib/reseller-store-ref';
+import { buildStoreBuyPath, buildStoreHomePath, buildStoreAfaPath, buildStoreCheckerPath, persistStoreRef } from '@/lib/reseller-store-ref';
 
 interface StoreInfo {
   storeName: string;
@@ -19,6 +19,7 @@ interface StoreInfo {
   supportEmail: string;
   serviceImages: Array<{ network: string; imageUrl: string; isAvailable: boolean }>;
   afa?: { inStock: boolean; imageUrl?: string };
+  checker?: { inStock: boolean; imageUrl?: string };
 }
 
 export default function StoreHomePage() {
@@ -82,11 +83,13 @@ export default function StoreHomePage() {
 
   const buyPath = (network: string) => buildStoreBuyPath(slug, network);
   const afaPath = buildStoreAfaPath(slug);
+  const checkerPath = buildStoreCheckerPath(slug);
 
   const services = (store.serviceImages || []).filter((s) =>
     ['MTN', 'Telecel', 'AirtelTigo'].includes(s.network)
   );
   const afaAvailable = store.afa?.inStock ?? false;
+  const checkerAvailable = store.checker?.inStock ?? false;
 
   return (
     <StoreLayout store={store} activeTab={activeTab} onTabChange={handleTabChange}>
@@ -158,6 +161,23 @@ export default function StoreHomePage() {
                       <Link to={afaPath} className="w-full">
                         <Button className="w-full" size="sm">
                           Register
+                        </Button>
+                      </Link>
+                    ) : undefined
+                  }
+                />
+              )}
+              {store.checker && (
+                <ServiceCard
+                  name="Results Checker"
+                  imageUrl={store.checker.imageUrl || '/images/waec-checker.png'}
+                  badge={checkerAvailable ? 'Available' : 'Unavailable'}
+                  badgeVariant={checkerAvailable ? 'available' : 'unavailable'}
+                  action={
+                    checkerAvailable ? (
+                      <Link to={checkerPath} className="w-full">
+                        <Button className="w-full" size="sm">
+                          Buy Checker
                         </Button>
                       </Link>
                     ) : undefined
