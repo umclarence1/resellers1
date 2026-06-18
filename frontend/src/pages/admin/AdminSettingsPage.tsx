@@ -16,11 +16,13 @@ import { getApiHostname } from '@/lib/deploy';
 type FulfillmentNetwork = 'MTN' | 'Telecel' | 'AirtelTigo';
 type FulfillmentProvider = 'smartdatahub' | 'datamax';
 type FulfillmentNetworkRoute = 'default' | FulfillmentProvider | 'off';
+type AfaFulfillmentRoute = 'default' | 'datamax' | 'off';
 
 type FulfillmentSettings = {
   enabled: boolean;
   defaultProvider: FulfillmentProvider;
   networkRouting: Record<FulfillmentNetwork, FulfillmentNetworkRoute>;
+  afaRouting: AfaFulfillmentRoute;
   providers: {
     smartdatahub: { configured: boolean; apiUrl: string };
     datamax: { configured: boolean; apiUrl: string };
@@ -67,10 +69,17 @@ const defaultSettings: SettingsData = {
   recommendedPoolTopUp: 0,
 };
 
+const AFA_ROUTE_OPTIONS: { value: AfaFulfillmentRoute; label: string }[] = [
+  { value: 'default', label: 'Use default (Datamax)' },
+  { value: 'datamax', label: 'Datamax' },
+  { value: 'off', label: 'Off' },
+];
+
 const defaultFulfillment: FulfillmentSettings = {
   enabled: false,
   defaultProvider: 'smartdatahub',
   networkRouting: { MTN: 'off', Telecel: 'off', AirtelTigo: 'off' },
+  afaRouting: 'datamax',
   providers: {
     smartdatahub: { configured: false, apiUrl: 'https://smartdatahubgh.com/api/v1' },
     datamax: { configured: false, apiUrl: 'https://datamax.site/wp-json/api/v1' },
@@ -107,6 +116,12 @@ function normalizeSettings(data: SettingsApiData): SettingsData {
   };
 }
 
+function normalizeAfaRoute(value: unknown): AfaFulfillmentRoute {
+  if (value === false) return 'off';
+  if (value === 'default' || value === 'datamax' || value === 'off') return value;
+  return 'datamax';
+}
+
 function normalizeFulfillment(data: Partial<FulfillmentSettings> & Record<string, unknown> | null): FulfillmentSettings {
   if (!data) return defaultFulfillment;
   const legacyApiConfigured = Boolean(data.apiConfigured);
@@ -130,6 +145,7 @@ function normalizeFulfillment(data: Partial<FulfillmentSettings> & Record<string
       Telecel: normalizeNetworkRoute(data.networkRouting?.Telecel),
       AirtelTigo: normalizeNetworkRoute(data.networkRouting?.AirtelTigo),
     },
+    afaRouting: normalizeAfaRoute(data.afaRouting),
   };
 }
 
@@ -162,7 +178,7 @@ export default function AdminSettingsPage() {
   const [resetSummary, setResetSummary] = useState<Record<string, number> | null>(null);
   const [fulfillment, setFulfillment] = useState<FulfillmentSettings | null>(null);
   const [fulfillmentSaving, setFulfillmentSaving] = useState<
-    FulfillmentNetwork | 'master' | 'defaultProvider' | null
+    FulfillmentNetwork | 'master' | 'defaultProvider' | 'afa' | null
   >(null);
   const [testingApi, setTestingApi] = useState<'smartdatahub' | 'datamax' | null>(null);
   const [checkingBalance, setCheckingBalance] = useState(false);
@@ -346,8 +362,9 @@ export default function AdminSettingsPage() {
       enabled?: boolean;
       defaultProvider?: FulfillmentProvider;
       networkRouting?: Partial<Record<FulfillmentNetwork, FulfillmentNetworkRoute>>;
+      afaRouting?: AfaFulfillmentRoute;
     },
-    savingKey: FulfillmentNetwork | 'master' | 'defaultProvider'
+    savingKey: FulfillmentNetwork | 'master' | 'defaultProvider' | 'afa'
   ) => {
     if (!fulfillment) return;
     setFulfillmentSaving(savingKey);
@@ -357,6 +374,7 @@ export default function AdminSettingsPage() {
       const res = await api.put('/admin/settings/fulfillment', {
         enabled: patch.enabled ?? fulfillment.enabled,
         defaultProvider: patch.defaultProvider ?? fulfillment.defaultProvider,
+        afaRouting: patch.afaRouting ?? fulfillment.afaRouting,
         networkRouting: {
           ...fulfillment.networkRouting,
           ...patch.networkRouting,
@@ -539,7 +557,7 @@ export default function AdminSettingsPage() {
                   </p>
                 </div>
 
-                <div className="grid sm:grid-cols-3 gap-3 mb-4">
+                <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
                   {FULFILLMENT_NETWORKS.map((network) => {
                     const route = fulfillment.networkRouting[network.id];
                     const routeLabel =
@@ -583,6 +601,41 @@ export default function AdminSettingsPage() {
                       </div>
                     );
                   })}
+                  <div
+                    className={cn(
+                      'rounded-xl border-2 p-4 text-left',
+                      fulfillment.enabled && fulfillment.afaRouting !== 'off'
+                        ? 'border-amber-500 bg-amber-50'
+                        : 'border-gray-200 bg-gray-50',
+                      !fulfillment.enabled && 'opacity-50'
+                    )}
+                  >
+                    <p className="font-semibold text-gray-900">AFA Registration</p>
+                    <p className="text-xs text-gray-500 mt-0.5">MTN farmer registration via Datamax</p>
+                    <select
+                      className="mt-2 w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-sm text-gray-900 disabled:opacity-50"
+                      disabled={fulfillmentSaving !== null || !fulfillment.enabled}
+                      value={fulfillment.afaRouting}
+                      onChange={(e) =>
+                        saveFulfillment(
+                          { afaRouting: e.target.value as AfaFulfillmentRoute },
+                          'afa'
+                        )
+                      }
+                    >
+                      {AFA_ROUTE_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-xs mt-2 text-gray-600">
+                      {fulfillmentSaving === 'afa'
+                        ? 'Saving...'
+                        : AFA_ROUTE_OPTIONS.find((o) => o.value === fulfillment.afaRouting)?.label ||
+                          fulfillment.afaRouting}
+                    </p>
+                  </div>
                 </div>
 
                 <div className="flex flex-wrap gap-2 mb-4">

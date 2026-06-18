@@ -23,12 +23,15 @@ export interface IServiceImage {
 
 export type FulfillmentProvider = 'smartdatahub' | 'datamax';
 export type FulfillmentNetworkRoute = 'default' | FulfillmentProvider | 'off';
+export type AfaFulfillmentRoute = 'default' | 'datamax' | 'off';
 
 export interface IFulfillmentSettings {
   /** Master switch — when false, no orders are sent to the external API */
   enabled: boolean;
   defaultProvider: FulfillmentProvider;
   networkRouting: Record<Network, FulfillmentNetworkRoute>;
+  /** AFA registration API routing (Datamax register endpoint only) */
+  afaRouting: AfaFulfillmentRoute;
 }
 
 export interface IAfaSettings {
@@ -85,6 +88,7 @@ const settingSchema = new Schema<ISetting>(
         Telecel: { type: String, enum: ['default', 'smartdatahub', 'datamax', 'off'], default: 'off' },
         AirtelTigo: { type: String, enum: ['default', 'smartdatahub', 'datamax', 'off'], default: 'off' },
       },
+      afaRouting: { type: String, enum: ['default', 'datamax', 'off'], default: 'datamax' },
     },
     serviceImages: [
       {

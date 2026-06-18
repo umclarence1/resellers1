@@ -2,7 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   resolveFulfillmentProviderFromSettings,
+  resolveAfaFulfillmentProviderFromSettings,
   normalizeNetworkRoute,
+  normalizeAfaRoute,
   migrateFulfillmentSettings,
 } from '../services/settingsService.js';
 import { IFulfillmentSettings } from '../models/Setting.js';
@@ -22,6 +24,7 @@ const baseSettings = (): IFulfillmentSettings => ({
     Telecel: 'default',
     AirtelTigo: 'default',
   },
+  afaRouting: 'datamax',
 });
 
 test('normalizeNetworkRoute migrates legacy booleans', () => {
@@ -70,6 +73,26 @@ test('migrateFulfillmentSettings converts boolean routing', () => {
   assert.equal(settings.networkRouting.Telecel, 'off');
   assert.equal(settings.networkRouting.AirtelTigo, 'smartdatahub');
   assert.equal(settings.defaultProvider, 'smartdatahub');
+  assert.equal(settings.afaRouting, 'datamax');
+});
+
+test('resolveAfaFulfillmentProviderFromSettings routes to Datamax or off', () => {
+  const settings = baseSettings();
+  assert.equal(resolveAfaFulfillmentProviderFromSettings(settings), 'datamax');
+
+  settings.afaRouting = 'off';
+  assert.equal(resolveAfaFulfillmentProviderFromSettings(settings), null);
+
+  settings.afaRouting = 'default';
+  settings.enabled = false;
+  assert.equal(resolveAfaFulfillmentProviderFromSettings(settings), null);
+});
+
+test('normalizeAfaRoute defaults unknown values to datamax', () => {
+  assert.equal(normalizeAfaRoute('datamax'), 'datamax');
+  assert.equal(normalizeAfaRoute('off'), 'off');
+  assert.equal(normalizeAfaRoute(false), 'off');
+  assert.equal(normalizeAfaRoute('invalid'), 'datamax');
 });
 
 test('mapNetworkToDatamaxCode maps Ghana networks', () => {

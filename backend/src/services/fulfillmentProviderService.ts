@@ -6,7 +6,7 @@ import { env } from '../config/env';
 import { createNotification } from './notificationService';
 import { notifyagentWebhook } from './agentWebhookService';
 import { creditWallet } from './walletService';
-import { resolveFulfillmentProvider } from './settingsService';
+import { resolveFulfillmentProvider, resolveAfaFulfillmentProvider } from './settingsService';
 import {
   SmartDataHubError,
   createSmartDataHubOrder,
@@ -432,7 +432,7 @@ async function submitToDatamax(order: IOrder): Promise<IOrder | null> {
 export async function submitOrderToProvider(order: IOrder): Promise<IOrder | null> {
   const isAfa = isAfaProduct(order.productType, order.bundleSize);
   const provider = isAfa
-    ? 'datamax'
+    ? order.fulfillmentProvider ?? (await resolveAfaFulfillmentProvider())
     : order.fulfillmentProvider ?? (await resolveFulfillmentProvider(order.network));
   if (!provider) return null;
   if (!isFulfillmentProviderConfigured(provider)) return null;

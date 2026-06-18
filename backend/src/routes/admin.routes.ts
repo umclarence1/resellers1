@@ -46,7 +46,7 @@ import {
 } from '../services/fulfillmentProviderService';
 import { isSmartDataHubConfigured, testSmartDataHubConnection } from '../services/smartDataHubClient';
 import { isDatamaxConfigured, testDatamaxConnection, checkDatamaxBalance } from '../services/datamaxClient';
-import { migrateFulfillmentSettings, normalizeNetworkRoute } from '../services/settingsService';
+import { migrateFulfillmentSettings, normalizeNetworkRoute, normalizeAfaRoute } from '../services/settingsService';
 import {
   setAgentCustomPrice,
   clearAgentCustomPrices,
@@ -1040,6 +1040,7 @@ function buildFulfillmentSettingsPayload(settings: Awaited<ReturnType<typeof get
       Telecel: migrated.networkRouting.Telecel,
       AirtelTigo: migrated.networkRouting.AirtelTigo,
     },
+    afaRouting: migrated.afaRouting,
     providers: {
       smartdatahub: {
         configured: isSmartDataHubConfigured(),
@@ -1125,6 +1126,11 @@ router.put('/settings/fulfillment', asyncHandler(async (req: AuthRequest, res) =
       }
     }
     settings.markModified('fulfillmentSettings.networkRouting');
+  }
+
+  if (req.body.afaRouting !== undefined) {
+    settings.fulfillmentSettings.afaRouting = normalizeAfaRoute(req.body.afaRouting);
+    settings.markModified('fulfillmentSettings.afaRouting');
   }
 
   await settings.save();

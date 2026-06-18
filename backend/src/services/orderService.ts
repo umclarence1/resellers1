@@ -14,7 +14,7 @@ import { assertNetworkInStock } from './networkStockService';
 import { assertAfaInStock } from './afaStockService';
 import { isAfaProduct, AFA_CHECK_USSD, AFA_PROCESSING_HOURS } from '../config/afa';
 import { isValidGhanaCard, normalizeGhanaCard } from '../utils/ghanaCard';
-import { resolveFulfillmentProvider } from './settingsService';
+import { resolveFulfillmentProvider, resolveAfaFulfillmentProvider } from './settingsService';
 import { getAgentPrice } from './agentPricingService';
 import { env } from '../config/env';
 import { withMongoTransaction, sessionOpts } from '../utils/mongoTransaction';
@@ -166,7 +166,9 @@ export const createOrder = async (input: CreateOrderInput) => {
   }
 
   const settings = await getSettings();
-  const fulfillmentProvider = isAfa ? 'datamax' : await resolveFulfillmentProvider(pkg.network);
+  const fulfillmentProvider = isAfa
+    ? await resolveAfaFulfillmentProvider()
+    : await resolveFulfillmentProvider(pkg.network);
   const apiCost = isAfa || fulfillmentProvider === 'datamax' ? pkg.agentPrice : pkg.costPrice;
   let sellingPrice = input.sellingPrice ?? pkg.agentPrice;
   let profit = 0;

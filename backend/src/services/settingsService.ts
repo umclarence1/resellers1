@@ -1,4 +1,4 @@
-import { Setting, IFulfillmentSettings, FulfillmentNetworkRoute, FulfillmentProvider } from '../models/Setting';
+import { Setting, IFulfillmentSettings, FulfillmentNetworkRoute, FulfillmentProvider, AfaFulfillmentRoute } from '../models/Setting';
 import { Network } from '../models/Package';
 import { User } from '../models/User';
 import { Complaint } from '../models/Complaint';
@@ -25,6 +25,7 @@ const defaultFulfillmentSettings = (): IFulfillmentSettings => ({
     Telecel: 'off',
     AirtelTigo: 'off',
   },
+  afaRouting: 'datamax',
 });
 
 const defaultComplaintSettings = () => ({
@@ -47,6 +48,12 @@ export function normalizeNetworkRoute(value: unknown): FulfillmentNetworkRoute {
   return 'off';
 }
 
+export function normalizeAfaRoute(value: unknown): AfaFulfillmentRoute {
+  if (value === false) return 'off';
+  if (value === 'default' || value === 'datamax' || value === 'off') return value;
+  return 'datamax';
+}
+
 export function migrateFulfillmentSettings(
   fulfillment: Partial<IFulfillmentSettings> | undefined
 ): { settings: IFulfillmentSettings; dirty: boolean } {
@@ -58,9 +65,11 @@ export function migrateFulfillmentSettings(
     enabled: current.enabled ?? base.enabled,
     defaultProvider: current.defaultProvider === 'datamax' ? 'datamax' : 'smartdatahub',
     networkRouting: { ...base.networkRouting },
+    afaRouting: normalizeAfaRoute(current.afaRouting ?? base.afaRouting),
   };
 
   if (!current.defaultProvider) dirty = true;
+  if (current.afaRouting === undefined) dirty = true;
 
   const routing = current.networkRouting as Record<string, unknown> | undefined;
   for (const network of NETWORKS) {
@@ -84,6 +93,21 @@ export function resolveFulfillmentProviderFromSettings(
   if (route === 'smartdatahub' || route === 'datamax') return route;
   return settings.defaultProvider || 'smartdatahub';
 }
+
+/** AFA registration is fulfilled via Datamax register API only. */
+export function resolveAfaFulfillmentProviderFromSettings(
+  settings: IFulfillmentSettings
+): FulfillmentProvider | null {
+  if (!settings.enabled) return null;
+  const route = normalizeAfaRoute(settings.afaRouting);
+  if (route === 'off') return null;
+  return 'datamax';
+}
+
+export const resolveAfaFulfillmentProvider = async (): Promise<FulfillmentProvider | null> => {
+  const settings = await getSettings();
+  return resolveAfaFulfillmentProviderFromSettings(settings.fulfillmentSettings);
+};
 
 export const getSettings = async () => {
   let settings = await Setting.findOne();
