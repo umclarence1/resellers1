@@ -37,12 +37,18 @@ import {
 import { Link, useNavigate } from 'react-router-dom';
 import DashboardInsights from '@/components/dashboard/DashboardInsights';
 import { GrowthPoint } from '@/components/dashboard/GrowthAreaChart';
+import { ServiceCard } from '@/components/ui/ModernCard';
+import Button from '@/components/ui/Button';
 
 export default function AgentDashboard() {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
   const [stats, setStats] = useState<Record<string, number>>({});
   const [growthChart, setGrowthChart] = useState<GrowthPoint[]>([]);
+  const [services, setServices] = useState<{
+    afaInStock: boolean;
+    checkerInStock: boolean;
+  }>({ afaInStock: false, checkerInStock: false });
 
 
 
@@ -71,6 +77,20 @@ export default function AgentDashboard() {
 
   }, [user, loadStats]);
 
+  useEffect(() => {
+    if (user?.role !== 'agent') return;
+    Promise.all([api.get('/agent/afa'), api.get('/agent/checker')])
+      .then(([afaRes, checkerRes]) => {
+        setServices({
+          afaInStock: Boolean(afaRes.data.data?.inStock),
+          checkerInStock: Boolean(
+            (checkerRes.data.data?.offers as Array<{ inStock: boolean }>)?.some((o) => o.inStock)
+          ),
+        });
+      })
+      .catch(() => {});
+  }, [user]);
+
 
 
   useEffect(() => {
@@ -96,6 +116,47 @@ export default function AgentDashboard() {
       <h1 className="text-xl sm:text-2xl font-bold text-white mb-2">Agent Dashboard</h1>
 
       <p className="text-sm text-gray-400 mb-6">Wallet, purchases, and order delivery status</p>
+
+      <p className="text-xs uppercase tracking-widest text-gray-500 font-semibold mb-3">Our services</p>
+      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
+        <ServiceCard
+          name="Buy Data"
+          imageUrl="/images/mtn.png"
+          badge="Available"
+          badgeVariant="available"
+          action={
+            <Link to="/agent/purchase" className="w-full">
+              <Button className="w-full" size="sm">View Plans</Button>
+            </Link>
+          }
+        />
+        <ServiceCard
+          name="MTN AFA Registration"
+          imageUrl="/images/afa.jpg"
+          badge={services.afaInStock ? 'Available' : 'Unavailable'}
+          badgeVariant={services.afaInStock ? 'available' : 'unavailable'}
+          action={
+            services.afaInStock ? (
+              <Link to="/agent/afa" className="w-full">
+                <Button className="w-full" size="sm">Register</Button>
+              </Link>
+            ) : undefined
+          }
+        />
+        <ServiceCard
+          name="Results Checker"
+          imageUrl="/images/waec-checker.png"
+          badge={services.checkerInStock ? 'Available' : 'Unavailable'}
+          badgeVariant={services.checkerInStock ? 'available' : 'unavailable'}
+          action={
+            services.checkerInStock ? (
+              <Link to="/agent/checker" className="w-full">
+                <Button className="w-full" size="sm">Buy Checker</Button>
+              </Link>
+            ) : undefined
+          }
+        />
+      </div>
 
       <DashboardInsights
         growthChart={growthChart}

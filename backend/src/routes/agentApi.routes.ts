@@ -10,7 +10,25 @@ import { getNetworkStockList } from '../services/networkStockService';
 import { getAfaStock } from '../services/afaStockService';
 import { getAfaPackage } from '../services/afaPackageService';
 import { AFA_CHECK_USSD, AFA_PROCESSING_HOURS } from '../config/afa';
+import { CheckerType, checkerTypeLabel, normalizeCheckerType } from '../config/checker';
+import { getAllCheckerStock } from '../services/checkerStockService';
+import { getCheckerPackage } from '../services/checkerPackageService';
 import { getAgentPrice } from '../services/agentPricingService';
+import { rejectFields } from '../middleware/rejectFields';
+
+const blockClientPricing = rejectFields(
+  'sellingPrice',
+  'costPrice',
+  'totalAmount',
+  'profit',
+  'processingFee',
+  'role',
+  'agentId',
+  'resellerId',
+  'userId',
+  'status',
+  'balance'
+);
 
 const router = Router();
 router.use(apiLimiter, agentApiAuth);
@@ -78,6 +96,7 @@ router.get('/afa', asyncHandler(async (req: AgentApiRequest, res) => {
     success: true,
     data: {
       packageId: pkg._id,
+      bundleSize: pkg.bundleSize,
       fee,
       inStock: stock.inStock,
       processingHours: AFA_PROCESSING_HOURS,
@@ -87,7 +106,7 @@ router.get('/afa', asyncHandler(async (req: AgentApiRequest, res) => {
   });
 }));
 
-router.post('/afa/register', asyncHandler(async (req: AgentApiRequest, res) => {
+router.post('/afa/register', blockClientPricing, asyncHandler(async (req: AgentApiRequest, res) => {
   const { fullName, phone, ghanaCard, location, occupation } = req.body;
   const pkg = await getAfaPackage();
   if (!pkg) throw new AppError('AFA registration is not available', 503);
@@ -105,6 +124,71 @@ router.post('/afa/register', asyncHandler(async (req: AgentApiRequest, res) => {
       orderId: order.orderId,
       status: order.status,
       message: `Registration submitted. Allow ${AFA_PROCESSING_HOURS} hours, then dial ${AFA_CHECK_USSD} to check status.`,
+    },
+  });
+}));
+
+router.get('/checker', asyncHandler(async (req: AgentApiRequest, res) => {
+  const [stock, wallet] = await Promise.all([
+    getAllCheckerStock(),
+    getOrCreateWallet(req.user!._id),
+  ]);
+
+  const agentId = req.user!._id;
+  const types: CheckerType[] = ['bece', 'wassce'];
+  const offers = await Promise.all(
+    types.map(async (type) => {
+      const pkg = await getCheckerPackage(type);
+      const stockRow = stock.find((s) => s.type === type)!;
+      const fee = pkg ? await getAgentPrice(agentId, pkg._id, pkg) : 0;
+      return {
+        type,
+        label: checkerTypeLabel(type),
+        packageId: pkg?._id,
+        fee,
+        inStock: stockRow.inStock,
+        availableCount: stockRow.availableCount,
+      };
+    })
+  );
+
+  res.json({
+    success: true,
+    data: {
+      walletBalance: wallet.balance,
+      offers,
+    },
+  });
+}));
+
+router.post('/checker/purchase', blockClientPricing, asyncHandler(async (req: AgentApiRequest, res) => {
+  const { type, email, phone } = req.body as { type?: string; email?: string; phone?: string };
+  if (!type || !email?.trim() || !phone?.trim()) {
+    throw new AppError('Checker type, email, and phone are required');
+  }
+
+  const checkerType = normalizeCheckerType(type);
+  const pkg = await getCheckerPackage(checkerType);
+  if (!pkg) throw new AppError(`${checkerTypeLabel(checkerType)} checker is not available`, 503);
+
+  const order = await createOrder({
+    packageId: pkg._id.toString(),
+    recipientPhone: phone,
+    customerEmail: email.trim().toLowerCase(),
+    agentId: req.user!._id.toString(),
+    source: 'agent_api',
+  });
+
+  res.status(201).json({
+    success: true,
+    data: {
+      orderId: order.orderId,
+      status: order.status,
+      type: order.checkerDetails?.type,
+      bundleSize: order.bundleSize,
+      serial: order.checkerDetails?.serial,
+      pin: order.checkerDetails?.pin,
+      message: 'Checker delivered successfully.',
     },
   });
 }));

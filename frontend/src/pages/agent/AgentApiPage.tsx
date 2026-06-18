@@ -462,6 +462,104 @@ Headers:
 }`}
             />
 
+            <h4 className="text-sm font-semibold text-gray-800 pt-2">MTN AFA Registration</h4>
+
+            <EndpointDoc
+              method="GET"
+              path="/afa"
+              description="Returns MTN AFA registration availability, agent fee, and your wallet balance. Check inStock before submitting registrations."
+              response={`{
+  "success": true,
+  "data": {
+    "packageId": "665abc...",
+    "bundleSize": "AFA",
+    "fee": 25.00,
+    "inStock": true,
+    "processingHours": 48,
+    "checkUssd": "*170#",
+    "walletBalance": 150.50
+  }
+}`}
+            />
+
+            <EndpointDoc
+              method="POST"
+              path="/afa/register"
+              description="Submit an MTN AFA registration. Your wallet is debited the agent fee. Ghana Card format: GHA-123456789-0. Phone must be 10 digits starting with 0."
+              request={`{
+  "fullName": "John Doe",
+  "phone": "0241234567",
+  "ghanaCard": "GHA-123456789-0",
+  "location": "Accra",
+  "occupation": "Farmer"
+}`}
+              response={`// HTTP 201
+{
+  "success": true,
+  "data": {
+    "orderId": "ORD-M1ABC2-XY9Z",
+    "status": "processing",
+    "message": "Registration submitted. Allow 48 hours, then dial *170# to check status."
+  }
+}`}
+            />
+
+            <h4 className="text-sm font-semibold text-gray-800 pt-2">Results Checker (BECE / WASSCE)</h4>
+
+            <EndpointDoc
+              method="GET"
+              path="/checker"
+              description="Lists BECE and WASSCE result checker offers with agent fees, stock status, and available pin count."
+              response={`{
+  "success": true,
+  "data": {
+    "walletBalance": 150.50,
+    "offers": [
+      {
+        "type": "bece",
+        "label": "BECE",
+        "packageId": "665abc...",
+        "fee": 18.00,
+        "inStock": true,
+        "availableCount": 42
+      },
+      {
+        "type": "wassce",
+        "label": "WASSCE",
+        "packageId": "665def...",
+        "fee": 18.00,
+        "inStock": true,
+        "availableCount": 30
+      }
+    ]
+  }
+}`}
+            />
+
+            <EndpointDoc
+              method="POST"
+              path="/checker/purchase"
+              description="Purchase a BECE or WASSCE results checker pin. Wallet is debited immediately. Serial and PIN are returned when status is delivered (usually instant)."
+              request={`{
+  "type": "bece",
+  "email": "customer@example.com",
+  "phone": "0241234567"
+}`}
+              response={`// HTTP 201
+{
+  "success": true,
+  "data": {
+    "orderId": "ORD-M1ABC2-XY9Z",
+    "status": "delivered",
+    "type": "bece",
+    "bundleSize": "BECE",
+    "serial": "ABC1234567",
+    "pin": "987654",
+    "message": "Checker delivered successfully."
+  }
+}`}
+            />
+
             <EndpointDoc
               method="POST"
               path="/bulk-purchase"

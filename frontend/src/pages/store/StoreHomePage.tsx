@@ -181,23 +181,21 @@ export default function StoreHomePage() {
                   }
                 />
               )}
-              {store.checker && (
-                <ServiceCard
-                  name="Results Checker"
-                  imageUrl={store.checker.imageUrl || '/images/waec-checker.png'}
-                  badge={checkerAvailable ? 'Available' : 'Unavailable'}
-                  badgeVariant={checkerAvailable ? 'available' : 'unavailable'}
-                  action={
-                    checkerAvailable ? (
-                      <Link to={checkerPath} className="w-full">
-                        <Button className="w-full" size="sm">
-                          Buy Checker
-                        </Button>
-                      </Link>
-                    ) : undefined
-                  }
-                />
-              )}
+              <ServiceCard
+                name="Results Checker"
+                imageUrl={store.checker?.imageUrl || '/images/waec-checker.png'}
+                badge={checkerAvailable ? 'Available' : 'Unavailable'}
+                badgeVariant={checkerAvailable ? 'available' : 'unavailable'}
+                action={
+                  checkerAvailable ? (
+                    <Link to={checkerPath} className="w-full">
+                      <Button className="w-full" size="sm">
+                        Buy Checker
+                      </Button>
+                    </Link>
+                  ) : undefined
+                }
+              />
             </div>
           </div>
         </section>
