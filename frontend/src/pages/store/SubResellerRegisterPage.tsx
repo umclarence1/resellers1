@@ -47,8 +47,15 @@ export default function SubResellerRegisterPage() {
     if (!slug) return;
     setLoadingParent(true);
     api
-      .get(`/store/${slug}/reseller-signup-info`)
-      .then((res) => setParent(res.data.data))
+      .get(`/store/${slug}`)
+      .then((res) => {
+        const data = res.data.data as { storeName: string; slug: string; resellerId: string };
+        setParent({
+          storeName: data.storeName,
+          storeId: data.resellerId,
+          slug: data.slug,
+        });
+      })
       .catch((err) => setLoadError(err instanceof Error ? err.message : 'Store not found'))
       .finally(() => setLoadingParent(false));
   }, [slug]);
@@ -120,7 +127,13 @@ export default function SubResellerRegisterPage() {
   }
 
   if (loadingParent || loadError) {
-    return <StoreLoadState loading={loadingParent} error={loadError} />;
+    return (
+      <StoreLoadState
+        loading={loadingParent}
+        error={loadError}
+        context="signup"
+      />
+    );
   }
 
   if (!parent) return null;
