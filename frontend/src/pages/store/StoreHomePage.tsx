@@ -9,7 +9,7 @@ import StoreContactLinks from '@/components/store/StoreContactLinks';
 import { FeatureCard, ServiceCard, InfoCard } from '@/components/ui/ModernCard';
 import { getNetworkImage } from '@/lib/network-images';
 import { useParams, Link, useLocation, useSearchParams, useNavigate } from 'react-router-dom';
-import { buildStoreBuyPath, buildStoreHomePath, buildStoreAfaPath, buildStoreCheckerPath, persistStoreRef } from '@/lib/reseller-store-ref';
+import { buildStoreBuyPath, buildStoreHomePath, buildStoreAfaPath, buildStoreCheckerPath, buildStoreBecomeResellerPath, persistStoreRef } from '@/lib/reseller-store-ref';
 
 interface StoreInfo {
   storeName: string;
@@ -122,6 +122,20 @@ export default function StoreHomePage() {
                   <FeatureCard key={item.title} title={item.title} description={item.desc} />
                 ))}
               </div>
+            </div>
+          </section>
+
+          <section className="py-12 border-t border-navy-border">
+            <div className="max-w-xl mx-auto px-4 text-center">
+              <h2 className="text-lg font-bold text-white mb-2">Want to sell data too?</h2>
+              <p className="text-sm text-gray-400 mb-5">
+                Create your own store under {store.storeName} and set your prices on top of ours.
+              </p>
+              <Link to={buildStoreBecomeResellerPath(slug)}>
+                <Button variant="outline" className="border-violet-400/50 text-violet-200 hover:bg-violet-500/10">
+                  Become a Reseller
+                </Button>
+              </Link>
             </div>
           </section>
         </>

@@ -41,6 +41,7 @@ const resellerLinks = [
   { href: '/reseller', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/reseller/store', label: 'My Store', icon: Store },
   { href: '/reseller/prices', label: 'Prices', icon: DollarSign },
+  { href: '/reseller/sub-resellers', label: 'My Resellers', icon: Users },
   { href: '/reseller/orders', label: 'Orders', icon: ShoppingCart },
   { href: '/reseller/withdrawals', label: 'Withdrawals', icon: Wallet },
   { href: '/reseller/complaints', label: 'Complaints', icon: MessageSquare },

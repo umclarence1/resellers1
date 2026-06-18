@@ -216,6 +216,19 @@ async function notifyStatusChange(order: IOrder, prevStatus: OrderStatus) {
         order.orderId
       );
     }
+    if (order.uplineProfits?.length) {
+      for (const entry of order.uplineProfits) {
+        if (entry.profit > 0) {
+          await creditWallet(
+            entry.resellerId,
+            entry.profit,
+            'profit_credit',
+            `Upline profit from order ${order.orderId}`,
+            `${order.orderId}-upline-${entry.resellerId.toString()}`
+          );
+        }
+      }
+    }
     await createNotification(
       order.resellerId,
       'order_delivered',

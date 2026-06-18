@@ -30,6 +30,11 @@ export interface IOrderStatusHistory {
   at: Date;
 }
 
+export interface IUplineProfit {
+  resellerId: mongoose.Types.ObjectId;
+  profit: number;
+}
+
 export interface IOrder extends Document {
   orderId: string;
   /** Legacy field — kept in sync with orderId for production unique index (orderNumber_1). */
@@ -49,6 +54,7 @@ export interface IOrder extends Document {
   adminBasePrice?: number;
   sellingPrice: number;
   profit: number;
+  uplineProfits?: IUplineProfit[];
   platformProfit: number;
   paystackFee: number;
   processingFee: number;
@@ -132,6 +138,12 @@ const orderSchema = new Schema<IOrder>(
     adminBasePrice: { type: Number },
     sellingPrice: { type: Number, required: true },
     profit: { type: Number, default: 0 },
+    uplineProfits: [
+      {
+        resellerId: { type: Schema.Types.ObjectId, ref: 'User' },
+        profit: { type: Number, default: 0 },
+      },
+    ],
     platformProfit: { type: Number, default: 0 },
     paystackFee: { type: Number, default: 0 },
     processingFee: { type: Number, default: 0 },

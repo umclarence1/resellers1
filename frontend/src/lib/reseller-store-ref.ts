@@ -3,6 +3,14 @@ import { CANONICAL_WEBSITE } from './canonical-site';
 
 const STORAGE_KEY = 'reseller_store_ref';
 
+export const slugify = (text: string): string =>
+  text
+    .toLowerCase()
+    .trim()
+    .replace(/[^\w\s-]/g, '')
+    .replace(/[\s_-]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+
 const STORE_PATH_RE = /^\/store\/([^/]+)/;
 
 /** Customer-facing store home on the canonical domain (slug from store name). */
@@ -24,6 +32,10 @@ export function buildStoreAfaPath(slug: string) {
 
 export function buildStoreCheckerPath(slug: string) {
   return `/store/${encodeURIComponent(slug)}/checker`;
+}
+
+export function buildStoreBecomeResellerPath(slug: string) {
+  return `/store/${encodeURIComponent(slug)}/become-reseller`;
 }
 
 export function buildStoreCheckerSuccessPath(slug: string, orderId: string, email?: string) {

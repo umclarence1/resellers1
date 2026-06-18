@@ -22,6 +22,9 @@ export const slugify = (text: string): string =>
     .replace(/[\s_-]+/g, '-')
     .replace(/^-+|-+$/g, '');
 
+export const isValidStoreSlug = (slug: string): boolean =>
+  /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug) && slug.length >= 2 && slug.length <= 64;
+
 export const isValidGhanaPhone = (phone: string): boolean => /^0\d{9}$/.test(phone);
 
 export const parseBundleSize = (input: string): string => {

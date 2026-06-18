@@ -41,12 +41,15 @@ const ResellerStorePage = lazy(() => import('@/pages/reseller/ResellerStorePage'
 const ResellerWithdrawalsPage = lazy(() => import('@/pages/reseller/ResellerWithdrawalsPage'));
 const ResellerOrdersPage = lazy(() => import('@/pages/reseller/ResellerOrdersPage'));
 const ResellerComplaintsPage = lazy(() => import('@/pages/reseller/ResellerComplaintsPage'));
+const ResellerSubResellersPage = lazy(() => import('@/pages/reseller/ResellerSubResellersPage'));
+const ResellerSubResellerPricesPage = lazy(() => import('@/pages/reseller/ResellerSubResellerPricesPage'));
 
 const StoreCheckerPage = lazy(() => import('@/pages/store/StoreCheckerPage'));
 const StoreCheckerSuccessPage = lazy(() => import('@/pages/store/StoreCheckerSuccessPage'));
 const StoreAfaPage = lazy(() => import('@/pages/store/StoreAfaPage'));
 const StorePurchasePage = lazy(() => import('@/pages/store/StorePurchasePage'));
 const StoreHomePage = lazy(() => import('@/pages/store/StoreHomePage'));
+const SubResellerRegisterPage = lazy(() => import('@/pages/store/SubResellerRegisterPage'));
 const LegacyStoreBuyRedirect = lazy(() =>
   import('@/pages/store/StoreSlugRedirect').then((m) => ({ default: m.LegacyStoreBuyRedirect }))
 );
@@ -110,8 +113,11 @@ export default function App() {
         <Route path="/reseller/withdrawals" element={<Lazy><ProtectedRoute role="reseller"><ResellerWithdrawalsPage /></ProtectedRoute></Lazy>} />
         <Route path="/reseller/orders" element={<Lazy><ProtectedRoute role="reseller"><ResellerOrdersPage /></ProtectedRoute></Lazy>} />
         <Route path="/reseller/complaints" element={<Lazy><ProtectedRoute role="reseller"><ResellerComplaintsPage /></ProtectedRoute></Lazy>} />
+        <Route path="/reseller/sub-resellers" element={<Lazy><ProtectedRoute role="reseller"><ResellerSubResellersPage /></ProtectedRoute></Lazy>} />
+        <Route path="/reseller/sub-resellers/:childId/prices" element={<Lazy><ProtectedRoute role="reseller"><ResellerSubResellerPricesPage /></ProtectedRoute></Lazy>} />
 
         <Route path="/store/:slug" element={<Lazy><StoreHomePage /></Lazy>} />
+        <Route path="/store/:slug/become-reseller" element={<Lazy><SubResellerRegisterPage /></Lazy>} />
         <Route path="/store/:slug/checker" element={<Lazy><StoreCheckerPage /></Lazy>} />
         <Route path="/store/:slug/checker/success" element={<Lazy><StoreCheckerSuccessPage /></Lazy>} />
         <Route path="/store/:slug/afa" element={<Lazy><StoreAfaPage /></Lazy>} />

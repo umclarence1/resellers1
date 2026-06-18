@@ -13,6 +13,7 @@
     "test:order-number": "npm run build && node --test dist/tests/orderNumber.test.js",
     "test:fulfillment": "npm run build && node --test dist/tests/fulfillmentAndPricing.test.js",
     "test:checker": "npm run build && node --test dist/tests/checkerInventory.test.js",
+    "test:sub-reseller": "npm run build && node --test dist/tests/subResellerPricing.test.js",
     "migrate:order-numbers": "npm run build && node dist/scripts/migrate-order-numbers.js",
     "reset:production": "npm run build && node dist/scripts/production-reset.js"
   },

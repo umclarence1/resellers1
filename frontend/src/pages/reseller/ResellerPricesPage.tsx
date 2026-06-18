@@ -50,6 +50,10 @@ export default function ResellerPricesPage() {
     networksMissing: string[];
     configuredCount: number;
     requiredCount: number;
+    parentPricesReady?: boolean;
+    parentPricesPending?: boolean;
+    parentNetworksMissing?: string[];
+    hasParent?: boolean;
     networkStock?: NetworkStockRow[];
   } | null>(null);
 
@@ -112,11 +116,23 @@ export default function ResellerPricesPage() {
     <DashboardLayout role="reseller">
       <h1 className="text-xl sm:text-2xl font-bold text-white mb-2">Price Management</h1>
       <p className="text-sm text-gray-400 mb-6">
-        Set your selling price above the base price. Your profit per sale is{' '}
-        <span className="text-gold font-medium">your price − base price</span> — this amount is credited to your wallet when an order is delivered.
+        Set your selling price above your cost (floor). Your profit per sale is{' '}
+        <span className="text-gold font-medium">your price − cost</span> — credited to your wallet when an order is delivered.
       </p>
 
-      {pricingMeta && !pricingMeta.pricesReady && (
+      {pricingMeta?.parentPricesPending && (
+        <Card className="p-4 mb-4 border-violet-200 bg-violet-50">
+          <p className="text-sm font-medium text-gray-900">Waiting for your parent reseller</p>
+          <p className="text-sm text-gray-600 mt-1">
+            Your parent must set your floor prices before you can configure selling prices.
+            {pricingMeta.parentNetworksMissing && pricingMeta.parentNetworksMissing.length > 0 && (
+              <> Missing networks: {pricingMeta.parentNetworksMissing.join(', ')}.</>
+            )}
+          </p>
+        </Card>
+      )}
+
+      {pricingMeta && !pricingMeta.pricesReady && !pricingMeta.parentPricesPending && (
         <Card className="p-4 mb-4 border-amber-200 bg-amber-50">
           <p className="text-sm font-medium text-gray-900">Set prices for every network to open your store</p>
           <p className="text-sm text-gray-600 mt-1">
@@ -190,7 +206,7 @@ export default function ResellerPricesPage() {
                   <thead className={panelTableHeadClass}>
                     <tr>
                       <th className={panelTableTh()}>Bundle</th>
-                      <th className={panelTableTh()}>Min (Base)</th>
+                      <th className={panelTableTh()}>{pricingMeta?.hasParent ? 'Your cost' : 'Min (Base)'}</th>
                       <th className={panelTableTh()}>Max</th>
                       <th className={panelTableTh()}>Your price</th>
                       <th className={panelTableTh('emerald')}>Your profit</th>
@@ -236,6 +252,8 @@ export default function ResellerPricesPage() {
                           <td className={panelTableCellClass}>
                             {!inStock ? (
                               <span className="text-xs text-amber-700 font-medium">Out of stock</span>
+                            ) : pricingMeta?.parentPricesPending ? (
+                              <span className="text-xs text-violet-600 font-medium">Awaiting parent</span>
                             ) : editing === p._id ? (
                               <div className="flex gap-2">
                                 <Button size="sm" loading={saving} onClick={() => savePrice(p._id)}>Save</Button>
@@ -274,7 +292,7 @@ export default function ResellerPricesPage() {
                 <thead className={panelTableHeadClass}>
                   <tr>
                     <th className={panelTableTh()}>Type</th>
-                    <th className={panelTableTh()}>Min (Base)</th>
+                    <th className={panelTableTh()}>{pricingMeta?.hasParent ? 'Your cost' : 'Min (Base)'}</th>
                     <th className={panelTableTh()}>Max</th>
                     <th className={panelTableTh()}>Your price</th>
                     <th className={panelTableTh('emerald')}>Your profit</th>
@@ -311,7 +329,9 @@ export default function ResellerPricesPage() {
                           <span className="font-semibold text-emerald-700">{formatCurrency(liveProfit)}</span>
                         </td>
                         <td className={panelTableCellClass}>
-                          {editing === p._id ? (
+                          {pricingMeta?.parentPricesPending ? (
+                            <span className="text-xs text-violet-600 font-medium">Awaiting parent</span>
+                          ) : editing === p._id ? (
                             <div className="flex gap-2">
                               <Button size="sm" loading={saving} onClick={() => savePrice(p._id)}>Save</Button>
                               <Button size="sm" variant="outline" onClick={() => setEditing(null)}>Cancel</Button>

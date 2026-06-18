@@ -20,6 +20,11 @@ import { assignCheckerToOrder, deliverCheckerNotifications } from './checkerFulf
 import { isValidGhanaCard, normalizeGhanaCard } from '../utils/ghanaCard';
 import { resolveFulfillmentProvider, resolveAfaFulfillmentProvider } from './settingsService';
 import { getAgentPrice } from './agentPricingService';
+import {
+  computeMultiLevelProfitSplit,
+  getEffectiveBasePrice,
+  getResellerSellPrice,
+} from './subResellerPricingService';
 import { env } from '../config/env';
 import { withMongoTransaction, sessionOpts } from '../utils/mongoTransaction';
 import { appendAuditLog } from './immutableAuditService';
@@ -36,13 +41,13 @@ const getSettings = async () => {
 export const getResellerPrice = async (
   resellerId: mongoose.Types.ObjectId | string,
   packageId: mongoose.Types.ObjectId | string,
-  defaultPrice: number
+  pkg: Pick<import('../models/Package').IPackage, 'resellerBasePrice'>
 ): Promise<number> => {
   const reseller = await User.findById(resellerId);
-  if (!reseller?.resellerStore?.customPrices) return defaultPrice;
-
-  const customPrice = reseller.resellerStore.customPrices.get(packageId.toString());
-  return customPrice ?? defaultPrice;
+  if (!reseller?.resellerStore) {
+    return pkg.resellerBasePrice;
+  }
+  return getResellerSellPrice(reseller, packageId.toString(), pkg);
 };
 
 export const validateResellerPrice = (
@@ -201,6 +206,7 @@ export const createOrder = async (input: CreateOrderInput) => {
   });
   let sellingPrice = input.sellingPrice ?? pkg.agentPrice;
   let profit = 0;
+  let uplineProfits: import('../models/Order').IUplineProfit[] = [];
 
   const needsWalletDebit =
     (input.source === 'agent' || input.source === 'agent_api') &&
@@ -212,15 +218,27 @@ export const createOrder = async (input: CreateOrderInput) => {
       ? await getAgentPrice(input.agentId, pkg._id, pkg)
       : pkg.agentPrice;
   } else if (input.source === 'reseller_store') {
-    const basePrice = pkg.resellerBasePrice;
+    const reseller = input.resellerId ? await User.findById(input.resellerId) : null;
+    const basePrice = reseller
+      ? getEffectiveBasePrice(reseller, pkg._id.toString(), pkg)
+      : pkg.resellerBasePrice;
     const customPrice = input.resellerId
-      ? await getResellerPrice(input.resellerId, pkg._id, basePrice)
+      ? await getResellerPrice(input.resellerId, pkg._id, pkg)
       : basePrice;
 
     sellingPrice = input.sellingPrice ?? customPrice;
     validateResellerPrice(sellingPrice, basePrice, pkg.maxSellingPrice);
 
-    profit = computeResellerOrderProfit(sellingPrice, basePrice);
+    const split = input.resellerId
+      ? await computeMultiLevelProfitSplit(
+          sellingPrice,
+          input.resellerId,
+          pkg._id.toString(),
+          pkg
+        )
+      : { leafProfit: computeResellerOrderProfit(sellingPrice, basePrice), uplineProfits: [] };
+    profit = split.leafProfit;
+    uplineProfits = split.uplineProfits;
   }
 
   const processingFee =
@@ -267,6 +285,7 @@ export const createOrder = async (input: CreateOrderInput) => {
     adminBasePrice,
     sellingPrice,
     profit,
+    ...(uplineProfits.length > 0 ? { uplineProfits } : {}),
     platformProfit,
     paystackFee,
     processingFee,

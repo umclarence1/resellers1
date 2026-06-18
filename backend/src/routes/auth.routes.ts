@@ -41,6 +41,22 @@ import {
 import { buildAuthUserProfile } from '../services/performanceService';
 import { validatePasswordStrength } from '../utils/password';
 import { activateResellerStore } from '../services/resellerOnboardingService';
+import { rejectFields } from '../middleware/rejectFields';
+import {
+  generateUniqueResellerSlug,
+  validateStoreSlugInput,
+} from '../services/subResellerPricingService';
+import { isValidStoreSlug } from '../utils/helpers';
+
+const blockSubResellerPrivilegeFields = rejectFields(
+  'referredBy',
+  'parentAssignedPrices',
+  'role',
+  'status',
+  'customPrices',
+  'isActive',
+  'isVerified'
+);
 
 const router = Router();
 
@@ -153,6 +169,131 @@ router.post(
         isActive: true,
         isVerified: false,
         referralCode: generateReferralCode(),
+        customPrices: {},
+      },
+    });
+
+    await Wallet.create({ userId: user._id });
+
+    if (env.devSkipOtp) {
+      user.status = 'active';
+      activateResellerStore(user);
+      await user.save();
+      const result = await issueAuthSession(user);
+      res.status(201).json({
+        success: true,
+        message: 'Registration successful (dev mode)',
+        data: { ...result, requiresOtp: false },
+      });
+      return;
+    }
+
+    await createAndSendOtp(email);
+
+    res.status(201).json({
+      success: true,
+      message: 'Registration successful. Please verify OTP sent to your email.',
+      data: { email: user.email, requiresOtp: true },
+    });
+  })
+);
+
+// Sub-reseller registration (under an existing parent store)
+router.post(
+  '/register/sub-reseller',
+  registerLimiter,
+  blockSubResellerPrivilegeFields,
+  asyncHandler(async (req, res) => {
+    const {
+      parentStoreSlug,
+      fullName,
+      email,
+      phone,
+      password,
+      confirmPassword,
+      storeName,
+      slug,
+      storeDescription,
+    } = req.body;
+
+    if (
+      !parentStoreSlug ||
+      !fullName ||
+      !email ||
+      !phone ||
+      !password ||
+      !confirmPassword ||
+      !storeName ||
+      !slug
+    ) {
+      throw new AppError('All required fields must be provided');
+    }
+    if (password !== confirmPassword) {
+      throw new AppError('Passwords do not match');
+    }
+    const passwordError = validatePasswordStrength(password);
+    if (passwordError) throw new AppError(passwordError);
+    if (!isValidGhanaPhone(phone)) {
+      throw new AppError('Phone must be 10 digits starting with 0');
+    }
+    if (storeName.trim().length < 2) {
+      throw new AppError('Store name must be at least 2 characters');
+    }
+
+    validateStoreSlugInput(slug);
+    const normalizedSlug = slugify(slug);
+    if (!isValidStoreSlug(normalizedSlug)) {
+      throw new AppError('Invalid store URL slug');
+    }
+
+    const parent = await User.findOne({
+      'resellerStore.slug': String(parentStoreSlug).toLowerCase().trim(),
+      role: 'reseller',
+    });
+    if (!parent?.resellerStore) {
+      throw new AppError('Parent store not found', 404);
+    }
+    if (!parent.resellerStore.isActive || parent.status !== 'active') {
+      throw new AppError('This store is not accepting new resellers right now', 403);
+    }
+
+    const existing = await User.findOne({ email: email.toLowerCase() });
+    if (existing) {
+      res.status(201).json({
+        success: true,
+        message: 'If registration succeeds, an OTP will be sent to your email.',
+        data: { email: email.toLowerCase(), requiresOtp: true },
+      });
+      return;
+    }
+
+    const slugTaken = await User.findOne({ 'resellerStore.slug': normalizedSlug });
+    if (slugTaken) {
+      throw new AppError('This store URL is already taken. Choose another slug.');
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 12);
+    const uniqueSlug = await generateUniqueResellerSlug(normalizedSlug);
+
+    const user = await User.create({
+      fullName: fullName.trim(),
+      email: email.toLowerCase(),
+      phone,
+      password: hashedPassword,
+      role: 'reseller',
+      status: 'pending',
+      resellerStore: {
+        storeName: storeName.trim(),
+        slug: uniqueSlug,
+        phone,
+        whatsapp: phone,
+        supportEmail: email.toLowerCase(),
+        isActive: true,
+        isVerified: false,
+        referralCode: generateReferralCode(),
+        referredBy: parent._id,
+        parentAssignedPrices: {},
+        storeDescription: storeDescription?.trim() || '',
         customPrices: {},
       },
     });

@@ -22,6 +22,7 @@ import {
 import { getAllCheckerStock } from '../services/checkerStockService';
 import { getCheckerPackage } from '../services/checkerPackageService';
 import { validateAfaDetails } from '../services/orderService';
+import { getEffectiveBasePrice, getResellerSellPrice } from '../services/subResellerPricingService';
 import { env } from '../config/env';
 import { otpLimiter, purchaseLimiter } from '../middleware/rateLimiter';
 import { rejectFields } from '../middleware/rejectFields';
@@ -42,6 +43,28 @@ import {
 } from '../services/orderHistoryService';
 
 const router = Router();
+
+// Parent store info for sub-reseller signup form
+router.get('/:slug/reseller-signup-info', asyncHandler(async (req, res) => {
+  const reseller = await User.findOne({
+    'resellerStore.slug': req.params.slug,
+    role: 'reseller',
+  }).select('resellerStore status');
+
+  if (!reseller?.resellerStore) throw new AppError('Store not found', 404);
+  if (!reseller.resellerStore.isActive || reseller.status !== 'active') {
+    throw new AppError('This store is not accepting new resellers right now', 403);
+  }
+
+  res.json({
+    success: true,
+    data: {
+      storeName: reseller.resellerStore.storeName,
+      storeId: reseller._id.toString(),
+      slug: reseller.resellerStore.slug,
+    },
+  });
+}));
 
 // Get store by slug
 router.get('/:slug', asyncHandler(async (req, res) => {
@@ -128,13 +151,14 @@ router.get('/:slug/packages/:network', asyncHandler(async (req, res) => {
   }).sort({ sortOrder: 1 });
 
   const priced = packages.map((pkg) => {
-    const customPrice = reseller.resellerStore?.customPrices.get(pkg._id.toString());
-    const price = customPrice ?? pkg.resellerBasePrice;
+    const packageId = pkg._id.toString();
+    const effectiveBase = getEffectiveBasePrice(reseller, packageId, pkg);
+    const price = getResellerSellPrice(reseller, packageId, pkg);
     return {
       id: pkg._id,
       bundleSize: pkg.bundleSize,
       price,
-      basePrice: pkg.resellerBasePrice,
+      basePrice: effectiveBase,
       maxPrice: pkg.maxSellingPrice,
     };
   });
@@ -165,7 +189,8 @@ router.get('/:slug/afa', asyncHandler(async (req, res) => {
   if (!pkg || !pkg.isEnabled) throw new AppError('AFA registration is not available', 503);
 
   const customPrice = reseller.resellerStore?.customPrices.get(pkg._id.toString());
-  const price = customPrice ?? pkg.resellerBasePrice;
+  const effectiveBase = getEffectiveBasePrice(reseller, pkg._id.toString(), pkg);
+  const price = customPrice ?? effectiveBase;
 
   const settings = await getSettings();
   const paystackChargePercent = settings.paystackChargePercent ?? 2;
@@ -181,7 +206,7 @@ router.get('/:slug/afa', asyncHandler(async (req, res) => {
       processingFee,
       total,
       paystackChargePercent,
-      basePrice: pkg.resellerBasePrice,
+      basePrice: effectiveBase,
       maxPrice: pkg.maxSellingPrice,
       inStock: stock.inStock,
       imageUrl: stock.imageUrl,
@@ -202,8 +227,9 @@ async function buildCheckerOffer(
   ]);
   if (!pkg) throw new AppError(`${checkerTypeLabel(type)} checker is not configured`, 503);
 
-  const customPrice = reseller!.resellerStore?.customPrices.get(pkg._id.toString());
-  const price = customPrice ?? pkg.resellerBasePrice;
+  const packageId = pkg._id.toString();
+  const effectiveBase = getEffectiveBasePrice(reseller!, packageId, pkg);
+  const price = getResellerSellPrice(reseller!, packageId, pkg);
   const paystackChargePercent = settings.paystackChargePercent ?? 2;
   const processingFee = roundMoney(price * (paystackChargePercent / 100));
   const total = roundMoney(price + processingFee);
@@ -216,7 +242,7 @@ async function buildCheckerOffer(
     processingFee,
     total,
     paystackChargePercent,
-    basePrice: pkg.resellerBasePrice,
+    basePrice: effectiveBase,
     maxPrice: pkg.maxSellingPrice,
     inStock: stockRow.inStock,
     availableCount: stockRow.availableCount,
@@ -364,8 +390,8 @@ router.post('/:slug/purchase/init', purchaseLimiter, blockStorePricing, asyncHan
     await assertNetworkInStock(pkg.network);
   }
 
-  const customPrice = reseller.resellerStore?.customPrices.get(pkg._id.toString());
-  const sellingPrice = customPrice ?? pkg.resellerBasePrice;
+  const pkgIdStr = pkg._id.toString();
+  const sellingPrice = getResellerSellPrice(reseller, pkgIdStr, pkg);
 
   const settings = await getSettings();
   const paystackChargePercent = settings.paystackChargePercent ?? 2;

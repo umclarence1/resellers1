@@ -14,6 +14,9 @@ export interface IResellerStore {
   isVerified: boolean;
   referralCode: string;
   referredBy?: mongoose.Types.ObjectId;
+  /** Floor prices assigned by parent reseller (packageId → price). */
+  parentAssignedPrices: Map<string, number>;
+  storeDescription?: string;
   customPrices: Map<string, number>;
 }
 
@@ -65,6 +68,8 @@ const resellerStoreSchema = new Schema<IResellerStore>(
     isVerified: { type: Boolean, default: true },
     referralCode: { type: String, required: true },
     referredBy: { type: Schema.Types.ObjectId, ref: 'User' },
+    parentAssignedPrices: { type: Map, of: Number, default: {} },
+    storeDescription: { type: String, default: '' },
     customPrices: { type: Map, of: Number, default: {} },
   },
   { _id: false }
@@ -116,6 +121,7 @@ const userSchema = new Schema<IUser>(
 
 userSchema.index({ 'resellerStore.slug': 1 }, { unique: true, sparse: true });
 userSchema.index({ 'resellerStore.referralCode': 1 }, { unique: true, sparse: true });
+userSchema.index({ 'resellerStore.referredBy': 1 }, { sparse: true });
 userSchema.index({ role: 1, status: 1 });
 userSchema.index({ role: 1, 'resellerStore.isActive': 1 });
 userSchema.index({ role: 1, 'agentApi.approvalStatus': 1 });

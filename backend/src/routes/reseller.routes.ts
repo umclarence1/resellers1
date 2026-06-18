@@ -34,9 +34,15 @@ import {
 import {
   getCustomPrice,
   getResellerPricingStatus,
+  getParentAssignedPricingStatus,
   RESELLER_STORE_NETWORKS,
 } from '../services/resellerStoreReadinessService';
 import { activateResellerStore } from '../services/resellerOnboardingService';
+import {
+  getEffectiveBasePrice,
+  setSubResellerAssignedPrice,
+  hasParentReseller,
+} from '../services/subResellerPricingService';
 
 const router = Router();
 router.use(authenticate, authorize('reseller'));
@@ -53,7 +59,7 @@ router.get('/dashboard', asyncHandler(async (req: AuthRequest, res) => {
   const [
     ordersToday, ordersWeek, ordersMonth,
     successful, failed, pending, processing,
-    revenueAgg, profitToday, profitWeek, profitMonth, profitLifetime,
+    revenueAgg, profitToday, profitWeek, profitMonth, profitLifetime, uplineProfitLifetime,
   ] = await Promise.all([
     Order.countDocuments({ resellerId, createdAt: { $gte: startOfToday } }),
     Order.countDocuments({ resellerId, createdAt: { $gte: startOfWeek } }),
@@ -67,16 +73,46 @@ router.get('/dashboard', asyncHandler(async (req: AuthRequest, res) => {
     Order.aggregate([{ $match: { resellerId, createdAt: { $gte: startOfWeek } } }, { $group: { _id: null, total: { $sum: '$profit' } } }]),
     Order.aggregate([{ $match: { resellerId, createdAt: { $gte: startOfMonth } } }, { $group: { _id: null, total: { $sum: '$profit' } } }]),
     Order.aggregate([{ $match: { resellerId } }, { $group: { _id: null, total: { $sum: '$profit' } } }]),
+    Order.aggregate([
+      { $match: { 'uplineProfits.resellerId': resellerId } },
+      { $unwind: '$uplineProfits' },
+      { $match: { 'uplineProfits.resellerId': resellerId } },
+      { $group: { _id: null, total: { $sum: '$uplineProfits.profit' } } },
+    ]),
   ]);
 
   const growthChart = await getOrderGrowthChart({ resellerId }, 14, 'profit');
   const user = await User.findById(resellerId);
   const pricing = user?.resellerStore
     ? await getResellerPricingStatus(user)
-    : { pricesReady: false, configuredCount: 0, requiredCount: 0, networksMissing: [] as string[] };
+    : {
+        pricesReady: false,
+        configuredCount: 0,
+        requiredCount: 0,
+        networksMissing: [] as string[],
+        parentPricesReady: true,
+        parentPricesPending: false,
+        parentNetworksMissing: [] as string[],
+      };
+
+  let parentStore: { storeName: string; slug: string } | null = null;
+  if (user?.resellerStore?.referredBy) {
+    const parent = await User.findById(user.resellerStore.referredBy).select('resellerStore');
+    if (parent?.resellerStore) {
+      parentStore = { storeName: parent.resellerStore.storeName, slug: parent.resellerStore.slug };
+    }
+  }
+
+  const subResellerCount = await User.countDocuments({
+    role: 'reseller',
+    'resellerStore.referredBy': resellerId,
+  });
+
   const canShareLink = Boolean(
     pricing.pricesReady && user?.resellerStore?.isActive && user.resellerStore.slug
   );
+  const leafProfit = profitLifetime[0]?.total || 0;
+  const uplineProfit = uplineProfitLifetime[0]?.total || 0;
 
   res.json({
     success: true,
@@ -91,7 +127,9 @@ router.get('/dashboard', asyncHandler(async (req: AuthRequest, res) => {
       processingOrders: processing,
       totalRevenue: revenueAgg[0]?.total || 0,
       growthChart,
-      totalProfit: profitLifetime[0]?.total || 0,
+      totalProfit: leafProfit + uplineProfit,
+      storeProfit: leafProfit,
+      uplineProfit,
       withdrawableProfit: wallet.profitBalance,
       profitToday: profitToday[0]?.total || 0,
       profitThisWeek: profitWeek[0]?.total || 0,
@@ -101,6 +139,12 @@ router.get('/dashboard', asyncHandler(async (req: AuthRequest, res) => {
       configuredCount: pricing.configuredCount,
       requiredCount: pricing.requiredCount,
       networksMissing: pricing.networksMissing,
+      parentPricesReady: pricing.parentPricesReady,
+      parentPricesPending: pricing.parentPricesPending,
+      parentNetworksMissing: pricing.parentNetworksMissing,
+      parentStore,
+      subResellerCount,
+      hasParent: user ? hasParentReseller(user) : false,
       canShareLink,
       storeUrl: canShareLink ? buildStoreShareUrl(user!.resellerStore!.slug) : null,
     },
@@ -124,6 +168,15 @@ router.get('/store', asyncHandler(async (req: AuthRequest, res) => {
 
   const pricing = await getResellerPricingStatus(user);
   const canShareLink = pricing.pricesReady && user.resellerStore.isActive;
+
+  let parentStore: { storeName: string; slug: string } | null = null;
+  if (user.resellerStore.referredBy) {
+    const parent = await User.findById(user.resellerStore.referredBy).select('resellerStore');
+    if (parent?.resellerStore) {
+      parentStore = { storeName: parent.resellerStore.storeName, slug: parent.resellerStore.slug };
+    }
+  }
+
   const networkStock = await getNetworkStockList();
 
   res.json({
@@ -134,11 +187,17 @@ router.get('/store', asyncHandler(async (req: AuthRequest, res) => {
       phone: user.resellerStore.phone,
       whatsapp: user.resellerStore.whatsapp,
       supportEmail: user.resellerStore.supportEmail,
+      storeDescription: user.resellerStore.storeDescription || '',
       isActive: user.resellerStore.isActive,
       pricesReady: pricing.pricesReady,
       configuredCount: pricing.configuredCount,
       requiredCount: pricing.requiredCount,
       networksMissing: pricing.networksMissing,
+      parentPricesReady: pricing.parentPricesReady,
+      parentPricesPending: pricing.parentPricesPending,
+      parentNetworksMissing: pricing.parentNetworksMissing,
+      parentStore,
+      hasParent: hasParentReseller(user),
       networkStock,
       canShareLink,
       storeUrl: canShareLink ? buildStoreShareUrl(user.resellerStore.slug) : null,
@@ -215,36 +274,42 @@ router.get('/prices', asyncHandler(async (req: AuthRequest, res) => {
   const pricing = await getResellerPricingStatus(user);
 
   const data = packages.map((pkg) => {
-    const custom = getCustomPrice(user, pkg._id.toString());
-    const myPrice = custom ?? pkg.resellerBasePrice;
+    const packageId = pkg._id.toString();
+    const custom = getCustomPrice(user, packageId);
+    const effectiveBase = getEffectiveBasePrice(user, packageId, pkg);
+    const myPrice = custom ?? effectiveBase;
     return {
       _id: pkg._id,
       network: pkg.network,
       bundleSize: pkg.bundleSize,
       productType: pkg.productType,
-      resellerBasePrice: pkg.resellerBasePrice,
+      resellerBasePrice: effectiveBase,
+      adminBasePrice: pkg.resellerBasePrice,
       maxSellingPrice: pkg.maxSellingPrice,
       myPrice,
       hasCustomPrice: custom !== undefined,
-      profitPerSale: computeResellerProfit(myPrice, pkg.resellerBasePrice),
-      ...resellerProfitRange(pkg.resellerBasePrice, pkg.maxSellingPrice),
+      profitPerSale: computeResellerProfit(myPrice, effectiveBase),
+      ...resellerProfitRange(effectiveBase, pkg.maxSellingPrice),
     };
   });
 
   const checkerData = checkerPackages.map((pkg) => {
-    const custom = getCustomPrice(user, pkg._id.toString());
-    const myPrice = custom ?? pkg.resellerBasePrice;
+    const packageId = pkg._id.toString();
+    const custom = getCustomPrice(user, packageId);
+    const effectiveBase = getEffectiveBasePrice(user, packageId, pkg);
+    const myPrice = custom ?? effectiveBase;
     return {
       _id: pkg._id,
       network: pkg.network,
       bundleSize: pkg.bundleSize,
       productType: pkg.productType,
-      resellerBasePrice: pkg.resellerBasePrice,
+      resellerBasePrice: effectiveBase,
+      adminBasePrice: pkg.resellerBasePrice,
       maxSellingPrice: pkg.maxSellingPrice,
       myPrice,
       hasCustomPrice: custom !== undefined,
-      profitPerSale: computeResellerProfit(myPrice, pkg.resellerBasePrice),
-      ...resellerProfitRange(pkg.resellerBasePrice, pkg.maxSellingPrice),
+      profitPerSale: computeResellerProfit(myPrice, effectiveBase),
+      ...resellerProfitRange(effectiveBase, pkg.maxSellingPrice),
     };
   });
 
@@ -257,6 +322,10 @@ router.get('/prices', asyncHandler(async (req: AuthRequest, res) => {
       configuredCount: pricing.configuredCount,
       requiredCount: pricing.requiredCount,
       networksMissing: pricing.networksMissing,
+      parentPricesReady: pricing.parentPricesReady,
+      parentPricesPending: pricing.parentPricesPending,
+      parentNetworksMissing: pricing.parentNetworksMissing,
+      hasParent: hasParentReseller(user),
       networkStock: stock,
       afaStock,
       checkerStock,
@@ -276,10 +345,20 @@ router.put('/prices/:packageId', asyncHandler(async (req: AuthRequest, res) => {
     throw new AppError('This package cannot be priced');
   }
 
-  validateResellerPrice(price, pkg.resellerBasePrice, pkg.maxSellingPrice);
-
   const user = await User.findById(req.user!._id);
   if (!user?.resellerStore) throw new AppError('Store not found');
+
+  const effectiveBase = getEffectiveBasePrice(user, pkg._id.toString(), pkg);
+  if (hasParentReseller(user)) {
+    const parentStatus = await getParentAssignedPricingStatus(user);
+    if (!parentStatus.parentPricesReady) {
+      throw new AppError(
+        `Your parent reseller must set your floor prices first. Missing: ${parentStatus.networksMissing.join(', ')}`
+      );
+    }
+  }
+
+  validateResellerPrice(price, effectiveBase, pkg.maxSellingPrice);
 
   if (!user.resellerStore.customPrices) {
     user.resellerStore.customPrices = new Map();
@@ -288,7 +367,7 @@ router.put('/prices/:packageId', asyncHandler(async (req: AuthRequest, res) => {
   user.markModified('resellerStore.customPrices');
   await user.save();
 
-  const profitPerSale = computeResellerProfit(price, pkg.resellerBasePrice);
+  const profitPerSale = computeResellerProfit(price, effectiveBase);
 
   res.json({
     success: true,
@@ -296,8 +375,130 @@ router.put('/prices/:packageId', asyncHandler(async (req: AuthRequest, res) => {
     data: {
       packageId: pkg._id,
       price,
-      resellerBasePrice: pkg.resellerBasePrice,
+      resellerBasePrice: effectiveBase,
       profitPerSale,
+    },
+  });
+}));
+
+// Sub-resellers (direct children)
+router.get('/sub-resellers', asyncHandler(async (req: AuthRequest, res) => {
+  const parentId = req.user!._id;
+  const children = await User.find({
+    role: 'reseller',
+    'resellerStore.referredBy': parentId,
+  })
+    .select('fullName email phone status resellerStore createdAt')
+    .sort({ createdAt: -1 });
+
+  const data = await Promise.all(
+    children.map(async (child) => {
+      const pricing = child.resellerStore ? await getResellerPricingStatus(child) : null;
+      const parentPricing = child.resellerStore
+        ? await getParentAssignedPricingStatus(child)
+        : null;
+      return {
+        _id: child._id,
+        fullName: child.fullName,
+        email: child.email,
+        phone: child.phone,
+        status: child.status,
+        storeName: child.resellerStore?.storeName,
+        slug: child.resellerStore?.slug,
+        isActive: child.resellerStore?.isActive,
+        createdAt: child.createdAt,
+        pricesReady: pricing?.pricesReady ?? false,
+        parentPricesConfigured: parentPricing?.parentPricesReady ?? false,
+      };
+    })
+  );
+
+  res.json({ success: true, data });
+}));
+
+router.get('/sub-resellers/:childId/prices', asyncHandler(async (req: AuthRequest, res) => {
+  const parentId = req.user!._id.toString();
+  const child = await User.findOne({
+    _id: req.params.childId,
+    role: 'reseller',
+    'resellerStore.referredBy': parentId,
+  });
+  if (!child?.resellerStore) throw new AppError('Sub-reseller not found', 404);
+
+  const parent = await User.findById(parentId);
+  if (!parent?.resellerStore) throw new AppError('Store not found', 404);
+
+  const packages = await Package.find({
+    isEnabled: true,
+    network: { $in: RESELLER_STORE_NETWORKS },
+    productType: 'data',
+  }).sort({ network: 1, sortOrder: 1 });
+
+  const checkerPackages = await Package.find({
+    isEnabled: true,
+    productType: 'checker',
+  }).sort({ bundleSize: 1 });
+
+  const mapRow = (pkg: InstanceType<typeof Package>) => {
+    const packageId = pkg._id.toString();
+    const parentFloor = getEffectiveBasePrice(parent, packageId, pkg);
+    const assigned = child.resellerStore!.parentAssignedPrices?.get(packageId);
+    const floor = assigned ?? parentFloor;
+    return {
+      _id: pkg._id,
+      network: pkg.network,
+      bundleSize: pkg.bundleSize,
+      productType: pkg.productType,
+      parentCost: parentFloor,
+      assignedFloor: assigned,
+      floor,
+      maxSellingPrice: pkg.maxSellingPrice,
+      profitPerSale: assigned !== undefined ? computeResellerProfit(assigned, parentFloor) : 0,
+      ...resellerProfitRange(parentFloor, pkg.maxSellingPrice),
+    };
+  };
+
+  res.json({
+    success: true,
+    data: {
+      child: {
+        _id: child._id,
+        fullName: child.fullName,
+        storeName: child.resellerStore.storeName,
+        slug: child.resellerStore.slug,
+      },
+      packages: packages.map(mapRow),
+      checkerPackages: checkerPackages.map(mapRow),
+    },
+  });
+}));
+
+router.put('/sub-resellers/:childId/prices/:packageId', asyncHandler(async (req: AuthRequest, res) => {
+  const { price } = req.body;
+  if (price === undefined || price === null) throw new AppError('Price is required');
+
+  const pkg = await Package.findById(req.params.packageId);
+  if (!pkg) throw new AppError('Package not found');
+
+  await setSubResellerAssignedPrice(
+    req.user!._id.toString(),
+    String(req.params.childId),
+    pkg._id.toString(),
+    Number(price),
+    pkg
+  );
+
+  const parent = await User.findById(req.user!._id);
+  const parentFloor = parent ? getEffectiveBasePrice(parent, pkg._id.toString(), pkg) : pkg.resellerBasePrice;
+
+  res.json({
+    success: true,
+    message: 'Sub-reseller floor price updated',
+    data: {
+      packageId: pkg._id,
+      price: Number(price),
+      parentCost: parentFloor,
+      profitPerSale: computeResellerProfit(Number(price), parentFloor),
     },
   });
 }));

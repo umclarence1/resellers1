@@ -103,6 +103,27 @@ export default function ResellerDashboard() {
         </Card>
       )}
 
+      {Number(stats.subResellerCount) > 0 && (
+        <Card className="p-4 border-violet-200/60 bg-gradient-to-r from-violet-50/90 to-white mb-8 max-w-xl">
+          <p className="text-sm font-medium text-gray-900 mb-1">
+            {Number(stats.subResellerCount)} sub-reseller{Number(stats.subResellerCount) === 1 ? '' : 's'} under you
+          </p>
+          <p className="text-sm text-gray-600 mb-3">
+            Set floor prices and track their stores from My Resellers.
+          </p>
+          <Link to="/reseller/sub-resellers"><Button size="sm">Manage resellers</Button></Link>
+        </Card>
+      )}
+
+      {stats.parentStore && typeof stats.parentStore === 'object' && (
+        <Card className="p-4 mb-8 max-w-xl border-gray-200">
+          <p className="text-xs uppercase tracking-wide text-gray-500 font-semibold mb-1">Parent store</p>
+          <p className="text-sm font-medium text-gray-900">
+            {(stats.parentStore as { storeName: string }).storeName}
+          </p>
+        </Card>
+      )}
+
       <DashboardInsights
         growthChart={growthChart}
         stats={stats as Record<string, number>}
