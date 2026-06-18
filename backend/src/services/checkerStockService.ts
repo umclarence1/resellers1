@@ -9,6 +9,9 @@ import { getSettings } from './settingsService';
 
 export type CheckerStockRow = {
   type: CheckerType;
+  /** Admin toggle — when false, checkers are hidden from stores even if inventory exists. */
+  manualInStock: boolean;
+  /** True when manualInStock and at least one unused checker is available. */
   inStock: boolean;
   imageUrl: string;
   availableCount: number;
@@ -45,9 +48,11 @@ export async function getCheckerStock(type: CheckerType): Promise<CheckerStockRo
   const settings = await getSettings();
   const row = settings.checkerSettings?.[type] ?? defaultCheckerSettings()[type];
   const counts = await getCheckerCounts(type);
+  const manualInStock = Boolean(row.inStock);
   return {
     type,
-    inStock: row.inStock && counts.availableCount > 0,
+    manualInStock,
+    inStock: manualInStock && counts.availableCount > 0,
     imageUrl: row.imageUrl || CHECKER_DEFAULT_IMAGE,
     ...counts,
   };
@@ -64,7 +69,13 @@ export async function isCheckerInStock(type: CheckerType): Promise<boolean> {
 
 export async function assertCheckerInStock(type: CheckerType): Promise<void> {
   const row = await getCheckerStock(type);
-  if (!row.inStock || row.availableCount === 0) {
+  if (!row.manualInStock) {
+    throw new AppError(
+      `${checkerTypeLabel(type)} result checkers are currently unavailable. Please try again later.`,
+      503
+    );
+  }
+  if (row.availableCount === 0) {
     throw new AppError(
       `${checkerTypeLabel(type)} result checkers are currently out of stock. Please try again later.`,
       503

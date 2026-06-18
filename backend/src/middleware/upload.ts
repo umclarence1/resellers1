@@ -50,13 +50,15 @@ export const upload = multer({
 });
 
 export const uploadSpreadsheet = multer({
-  storage,
+  storage: multer.memoryStorage(),
   limits: { fileSize: env.maxFileSize, files: 1 },
   fileFilter: (_req, file, cb) => {
     const allowed = [
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       'application/vnd.ms-excel',
       'text/csv',
+      'application/csv',
+      'application/octet-stream',
     ];
     const ext = path.extname(file.originalname).toLowerCase();
     if (allowed.includes(file.mimetype) || ['.xlsx', '.xls', '.csv'].includes(ext)) {

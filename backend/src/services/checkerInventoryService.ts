@@ -46,8 +46,17 @@ export function parseCheckerExcel(buffer: Buffer): Array<{ serial: string; pin: 
   }
 
   const headers = (rows[0] || []).map(normalizeHeader);
-  const serialIdx = findColumnIndex(headers, ['serial', 'serialnumber', 'serialno', 's/n']);
-  const pinIdx = findColumnIndex(headers, ['pin', 'pincode', 'pinnumber']);
+  const serialIdx = findColumnIndex(headers, [
+    'serial',
+    'serialnumber',
+    'serialno',
+    'serialnum',
+    's/n',
+    'sn',
+    'voucher',
+    'voucherserial',
+  ]);
+  const pinIdx = findColumnIndex(headers, ['pin', 'pincode', 'pinnumber', 'pinno', 'scratchpin']);
 
   if (serialIdx < 0 || pinIdx < 0) {
     throw new AppError('Excel must have Serial and PIN columns in the first row');

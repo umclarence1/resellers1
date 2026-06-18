@@ -20,6 +20,7 @@ type CheckerType = 'bece' | 'wassce';
 
 interface CheckerStockRow {
   type: CheckerType;
+  manualInStock: boolean;
   inStock: boolean;
   availableCount: number;
   assignedCount: number;
@@ -46,10 +47,12 @@ export default function AdminCheckersPage() {
   const [summary, setSummary] = useState<CheckerSummary | null>(null);
   const [items, setItems] = useState<CheckerListItem[]>([]);
   const [pageLoading, setPageLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [uploadType, setUploadType] = useState<CheckerType>('bece');
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadMsg, setUploadMsg] = useState('');
+  const [uploadError, setUploadError] = useState('');
   const [toggling, setToggling] = useState<CheckerType | null>(null);
   const [filterType, setFilterType] = useState<CheckerType | ''>('');
   const [filterStatus, setFilterStatus] = useState<'available' | 'assigned' | ''>('');
@@ -60,6 +63,7 @@ export default function AdminCheckersPage() {
 
   const load = useCallback(async () => {
     setPageLoading(true);
+    setLoadError('');
     try {
       const params = new URLSearchParams();
       if (filterType) params.set('type', filterType);
@@ -71,6 +75,8 @@ export default function AdminCheckersPage() {
       ]);
       setSummary(summaryRes.data.data as CheckerSummary);
       setItems(listRes.data.data as CheckerListItem[]);
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : 'Failed to load checkers');
     } finally {
       setPageLoading(false);
     }
@@ -83,8 +89,12 @@ export default function AdminCheckersPage() {
   const toggleStock = async (type: CheckerType, inStock: boolean) => {
     setToggling(type);
     try {
-      await api.patch(`/admin/checkers/stock/${type}`, { inStock });
-      await load();
+      const res = await api.patch(`/admin/checkers/stock/${type}`, { inStock });
+      setSummary((prev) => {
+        if (!prev) return prev;
+        const row = res.data.data as CheckerStockRow;
+        return { ...prev, [type]: row };
+      });
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to update stock');
     } finally {
@@ -95,26 +105,26 @@ export default function AdminCheckersPage() {
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!file) {
-      setUploadMsg('Choose an Excel file first');
+      setUploadError('Choose an Excel file first');
       return;
     }
     setUploading(true);
     setUploadMsg('');
+    setUploadError('');
     try {
       const form = new FormData();
       form.append('file', file);
       form.append('type', uploadType);
-      const res = await api.post('/admin/checkers/upload', form, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
+      const res = await api.post('/admin/checkers/upload', form);
       const d = res.data.data as { imported: number; skippedDuplicates: number; skippedInvalid: number };
       setUploadMsg(
-        `Imported ${d.imported}. Skipped duplicates: ${d.skippedDuplicates}. Invalid rows: ${d.skippedInvalid}.`
+        `Imported ${d.imported}. Skipped duplicates: ${d.skippedDuplicates}. Invalid rows: ${d.skippedInvalid}.` +
+          (d.imported > 0 ? ' Stock marked in stock automatically.' : '')
       );
       setFile(null);
       await load();
     } catch (err) {
-      setUploadMsg(err instanceof Error ? err.message : 'Upload failed');
+      setUploadError(err instanceof Error ? err.message : 'Upload failed');
     } finally {
       setUploading(false);
     }
@@ -122,44 +132,71 @@ export default function AdminCheckersPage() {
 
   if (loading || !user) return null;
 
-  const stockCards: { key: CheckerType; label: string; row?: CheckerStockRow }[] = [
-    { key: 'bece', label: 'BECE', row: summary?.bece },
-    { key: 'wassce', label: 'WASSCE', row: summary?.wassce },
+  const stockCards: { key: CheckerType; label: string; row: CheckerStockRow | null }[] = [
+    { key: 'bece', label: 'BECE', row: summary?.bece ?? null },
+    { key: 'wassce', label: 'WASSCE', row: summary?.wassce ?? null },
   ];
 
   return (
     <DashboardLayout role="admin">
       <h1 className="text-xl sm:text-2xl font-bold text-white mb-6">Results Checkers</h1>
 
+      {loadError && (
+        <p className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 p-3 rounded-lg mb-4">
+          {loadError}
+        </p>
+      )}
+
       <div className="grid sm:grid-cols-2 gap-4 mb-6">
         {stockCards.map(({ key, label, row }) => (
           <Card key={key} className="p-4">
-            <div className="flex items-start justify-between gap-3">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div>
                 <h2 className="font-semibold text-gray-900">{label}</h2>
-                {row && (
-                  <p className="text-sm text-gray-500 mt-1">
-                    {row.availableCount} available · {row.assignedCount} used
-                  </p>
+                <p className="text-sm text-gray-500 mt-1">
+                  {row?.availableCount ?? 0} available · {row?.assignedCount ?? 0} used
+                </p>
+                <div className="flex flex-wrap gap-2 mt-2">
+                  <span
+                    className={`inline-block text-xs font-medium px-2 py-0.5 rounded-full ${
+                      row?.manualInStock ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-700'
+                    }`}
+                  >
+                    Sales {row?.manualInStock ? 'enabled' : 'paused'}
+                  </span>
+                  <span
+                    className={`inline-block text-xs font-medium px-2 py-0.5 rounded-full ${
+                      row?.inStock ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                    }`}
+                  >
+                    {row?.inStock ? 'Live on stores' : 'Not selling'}
+                  </span>
+                </div>
+                {row && row.manualInStock && row.availableCount === 0 && (
+                  <p className="text-xs text-amber-700 mt-2">Upload inventory to start selling.</p>
                 )}
-                <span
-                  className={`inline-block mt-2 text-xs font-medium px-2 py-0.5 rounded-full ${
-                    row?.inStock ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                  }`}
-                >
-                  {row?.inStock ? 'In stock' : 'Out of stock'}
-                </span>
               </div>
-              {row && (
+              <div className="flex flex-col gap-2 shrink-0">
                 <Button
                   size="sm"
-                  variant={row.inStock ? 'outline' : 'primary'}
+                  variant={row?.manualInStock ? 'outline' : 'primary'}
                   loading={toggling === key}
-                  onClick={() => toggleStock(key, !row.inStock)}
+                  disabled={!row && pageLoading}
+                  onClick={() => toggleStock(key, !row?.manualInStock)}
                 >
-                  Mark {row.inStock ? 'out of stock' : 'in stock'}
+                  {row?.manualInStock ? 'Pause sales' : 'Enable sales'}
                 </Button>
-              )}
+                {row && row.availableCount > 0 && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    loading={toggling === key}
+                    onClick={() => toggleStock(key, false)}
+                  >
+                    Force out of stock
+                  </Button>
+                )}
+              </div>
             </div>
           </Card>
         ))}
@@ -185,18 +222,23 @@ export default function AdminCheckersPage() {
             ))}
           </div>
           <p className="text-xs text-gray-500">
-            Excel must have <strong>Serial</strong> and <strong>PIN</strong> columns in row 1.
+            Row 1 must include <strong>Serial</strong> and <strong>PIN</strong> column headers. Data starts row 2.
           </p>
           <input
             type="file"
-            accept=".xlsx,.xls,.csv"
-            onChange={(e) => setFile(e.target.files?.[0] || null)}
-            className="block w-full text-sm text-gray-600"
+            accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+            onChange={(e) => {
+              setFile(e.target.files?.[0] || null);
+              setUploadError('');
+            }}
+            className="block w-full text-sm text-gray-600 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-gray-100 file:text-gray-800"
           />
+          {file && <p className="text-xs text-gray-600">Selected: {file.name}</p>}
           <Button type="submit" loading={uploading} disabled={!file}>
             Upload to {uploadType.toUpperCase()}
           </Button>
-          {uploadMsg && <p className="text-sm text-gray-600">{uploadMsg}</p>}
+          {uploadError && <p className="text-sm text-red-600">{uploadError}</p>}
+          {uploadMsg && <p className="text-sm text-emerald-700">{uploadMsg}</p>}
         </form>
       </Card>
 
@@ -248,26 +290,32 @@ export default function AdminCheckersPage() {
               </tr>
             </thead>
             <tbody>
-              {items.map((item) => (
-                <tr key={item._id} className={panelTableRowClass}>
-                  <td className={panelTableCellClass}>{item.type.toUpperCase()}</td>
-                  <td className={panelTableCellClass}>{item.serial}</td>
-                  <td className={panelTableCellClass}>
-                    <span
-                      className={
-                        item.status === 'available'
-                          ? 'text-emerald-700'
-                          : 'text-gray-500'
-                      }
-                    >
-                      {item.status === 'available' ? 'Unused' : 'Used'}
-                    </span>
-                  </td>
-                  <td className={panelTableCellClass}>
-                    {item.assignedAt ? new Date(item.assignedAt).toLocaleString() : '—'}
+              {items.length === 0 ? (
+                <tr>
+                  <td colSpan={4} className={`${panelTableCellClass} text-center text-gray-500 py-8`}>
+                    No checkers yet. Upload an Excel file above.
                   </td>
                 </tr>
-              ))}
+              ) : (
+                items.map((item) => (
+                  <tr key={item._id} className={panelTableRowClass}>
+                    <td className={panelTableCellClass}>{item.type.toUpperCase()}</td>
+                    <td className={panelTableCellClass}>{item.serial}</td>
+                    <td className={panelTableCellClass}>
+                      <span
+                        className={
+                          item.status === 'available' ? 'text-emerald-700' : 'text-gray-500'
+                        }
+                      >
+                        {item.status === 'available' ? 'Unused' : 'Used'}
+                      </span>
+                    </td>
+                    <td className={panelTableCellClass}>
+                      {item.assignedAt ? new Date(item.assignedAt).toLocaleString() : '—'}
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </PanelTableScroll>
         </PanelTable>

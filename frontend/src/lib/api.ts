@@ -24,7 +24,12 @@ export const api = axios.create({
 
 api.interceptors.request.use((config) => {
   const method = config.method?.toLowerCase();
-  if (method && ['post', 'put', 'patch'].includes(method) && config.data === undefined) {
+  if (config.data instanceof FormData) {
+    // Let the browser set multipart boundary — do not force application/json.
+    if (config.headers) {
+      delete config.headers['Content-Type'];
+    }
+  } else if (method && ['post', 'put', 'patch'].includes(method) && config.data === undefined) {
     config.data = {};
   }
   const token = getStoredToken();

@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { isMongoDuplicateKeyError } from '../utils/mongoErrors';
+import multer from 'multer';
 
 export class AppError extends Error {
   statusCode: number;
@@ -30,6 +31,19 @@ export const errorHandler = (
       success: false,
       message: 'We could not complete your request right now. Please try again in a moment.',
     });
+    return;
+  }
+
+  if (err instanceof multer.MulterError) {
+    res.status(400).json({
+      success: false,
+      message: err.code === 'LIMIT_FILE_SIZE' ? 'File is too large' : err.message,
+    });
+    return;
+  }
+
+  if (err.message?.includes('Only Excel') || err.message?.includes('Only JPEG')) {
+    res.status(400).json({ success: false, message: err.message });
     return;
   }
 

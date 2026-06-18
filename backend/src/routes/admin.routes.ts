@@ -457,21 +457,30 @@ router.post(
   '/checkers/upload',
   uploadSpreadsheet.single('file'),
   asyncHandler(async (req: AuthRequest, res) => {
-    const type = normalizeCheckerType(String(req.body.type || ''));
+    let typeRaw = req.body?.type;
+    if (Array.isArray(typeRaw)) typeRaw = typeRaw[0];
+    let type: CheckerType;
+    try {
+      type = normalizeCheckerType(String(typeRaw || ''));
+    } catch {
+      throw new AppError('Checker type must be bece or wassce');
+    }
     if (!req.file) throw new AppError('Excel file is required');
 
-    try {
-      const buffer = fs.readFileSync(req.file.path);
-      const result = await importCheckerInventory(type, buffer);
-      await logAudit(req, 'upload', 'checker_inventory', checkerTypeLabel(type), result);
-      res.json({
-        success: true,
-        data: result,
-        message: `Imported ${result.imported} ${checkerTypeLabel(type)} checker(s)`,
-      });
-    } finally {
+    const buffer = req.file.buffer ?? fs.readFileSync(req.file.path);
+    const result = await importCheckerInventory(type, buffer);
+    if (result.imported > 0) {
+      await setCheckerStock(type, true);
+    }
+    await logAudit(req, 'upload', 'checker_inventory', checkerTypeLabel(type), result);
+    if (req.file.path) {
       fs.unlink(req.file.path, () => undefined);
     }
+    res.json({
+      success: true,
+      data: result,
+      message: `Imported ${result.imported} ${checkerTypeLabel(type)} checker(s)`,
+    });
   })
 );
 
