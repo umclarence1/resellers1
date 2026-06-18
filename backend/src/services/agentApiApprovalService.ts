@@ -170,16 +170,23 @@ export async function migrateAgentApiApproval(): Promise<void> {
   let migrated = 0;
   for (const agent of agents) {
     if (!agent.agentApi) continue;
-    if (agent.agentApi.apiKey && agent.agentApi.secretKeyHash) {
-      agent.agentApi.approvalStatus = 'approved';
-      agent.agentApi.isActive = true;
-    } else {
-      agent.agentApi.approvalStatus = 'none';
-      agent.agentApi.isActive = false;
+    try {
+      if (agent.agentApi.apiKey && agent.agentApi.secretKeyHash) {
+        agent.agentApi.approvalStatus = 'approved';
+        agent.agentApi.isActive = true;
+      } else {
+        agent.agentApi.approvalStatus = 'none';
+        agent.agentApi.isActive = false;
+      }
+      agent.markModified('agentApi');
+      await agent.save();
+      migrated++;
+    } catch (err) {
+      console.error(
+        `Migration: skipped agent API approval for ${agent.email}:`,
+        err instanceof Error ? err.message : err
+      );
     }
-    agent.markModified('agentApi');
-    await agent.save();
-    migrated++;
   }
 
   if (migrated > 0) {

@@ -41,7 +41,10 @@ async function ensureDbReady(): Promise<void> {
       await connectDB();
       await seedDatabase();
       void warmEmailTransport();
-    })();
+    })().catch((err) => {
+      dbReady = null;
+      throw err;
+    });
   }
   return dbReady;
 }

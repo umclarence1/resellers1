@@ -10,6 +10,7 @@ import { generateReferralCode } from '../utils/helpers';
 import { migrateAgentSecretIfNeeded } from './agentSecretService';
 import { migrateDealerToAgent } from './agentRoleMigrationService';
 import { migrateAgentApiApproval, provisionApprovedAgentApi } from './agentApiApprovalService';
+import { migrateFulfillmentSettings } from './settingsService';
 import { reconcileLegacyPendingWithdrawals } from './withdrawalService';
 import { migrateOrderNumbers } from './orderMigrationService';
 
@@ -68,6 +69,12 @@ export const seedDatabase = async (): Promise<void> => {
 
   const existingSettings = await Setting.findOne();
   if (existingSettings) {
+    const migratedFulfillment = migrateFulfillmentSettings(existingSettings.fulfillmentSettings);
+    if (migratedFulfillment.dirty) {
+      existingSettings.fulfillmentSettings = migratedFulfillment.settings;
+      existingSettings.markModified('fulfillmentSettings');
+    }
+
     existingSettings.serviceImages = existingSettings.serviceImages
       .filter((img) => networks.includes(img.network as (typeof networks)[number]))
       .map((img) => ({
@@ -163,6 +170,7 @@ export const seedDatabase = async (): Promise<void> => {
   const settingsExist = await Setting.findOne();
   if (!settingsExist) {
     await Setting.create({
+      fulfillmentSettings: migrateFulfillmentSettings(undefined).settings,
       serviceImages: [
         { network: 'MTN', imageUrl: '/images/mtn.jpg', isAvailable: true },
         { network: 'Telecel', imageUrl: '/images/telecel.jpg', isAvailable: true },
