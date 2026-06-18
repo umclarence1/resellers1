@@ -12,10 +12,11 @@ import { runValidators, v } from '@/lib/form-validation';
 import { useNavigate } from 'react-router-dom';
 import AdminRewardModal from '@/components/admin/AdminRewardModal';
 import AdminAgentTopUpModal from '@/components/admin/AdminAgentTopUpModal';
+import AdminAgentCustomPricesModal from '@/components/admin/AdminAgentCustomPricesModal';
 import AdminPasswordConfirm from '@/components/admin/AdminPasswordConfirm';
 import ActionChip from '@/components/admin/ActionChip';
 import { formatCurrency } from '@/lib/utils';
-import { Gift, Loader2, Trash2, UserCheck, UserX, Wallet } from 'lucide-react';
+import { Gift, Loader2, Trash2, UserCheck, UserX, Wallet, Tags } from 'lucide-react';
 
 type AgentRow = {
   _id: string;
@@ -39,6 +40,7 @@ export default function AdminAgentsPage() {
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [rewardTarget, setRewardTarget] = useState<{ id: string; fullName: string } | null>(null);
   const [topUpTarget, setTopUpTarget] = useState<{ id: string; fullName: string; balance: number } | null>(null);
+  const [pricesTarget, setPricesTarget] = useState<{ id: string; fullName: string } | null>(null);
 
   useEffect(() => {
     if (!loading && (!user || user.role !== 'admin')) navigate('/login/admin');
@@ -205,6 +207,17 @@ export default function AdminAgentsPage() {
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap items-center gap-1.5">
                         <ActionChip
+                          title="Custom prices"
+                          active
+                          activeTone="sky"
+                          disabled={busy}
+                          onClick={() => setPricesTarget({ id: d._id, fullName: d.fullName })}
+                        >
+                          <Tags className="w-3 h-3" />
+                          Prices
+                        </ActionChip>
+
+                        <ActionChip
                           title="Top up wallet"
                           active
                           activeTone="emerald"
@@ -277,6 +290,14 @@ export default function AdminAgentsPage() {
           currentBalance={topUpTarget.balance}
           onClose={() => setTopUpTarget(null)}
           onSuccess={loadAgents}
+        />
+      )}
+
+      {pricesTarget && (
+        <AdminAgentCustomPricesModal
+          agentId={pricesTarget.id}
+          fullName={pricesTarget.fullName}
+          onClose={() => setPricesTarget(null)}
         />
       )}
 

@@ -47,6 +47,11 @@ export const env = {
     apiSecret: process.env.FULFILLMENT_API_SECRET || '',
     webhookSecret: process.env.FULFILLMENT_WEBHOOK_SECRET || '',
   },
+  datamax: {
+    enabled: process.env.DATAMAX_API_ENABLED === 'true',
+    apiUrl: process.env.DATAMAX_API_URL || 'https://datamax.site/wp-json/api/v1',
+    apiKey: process.env.DATAMAX_API_KEY || '',
+  },
   admin: {
     email: process.env.ADMIN_EMAIL || 'admin@localhost.com',
     password: process.env.ADMIN_PASSWORD || 'Admin@12345',

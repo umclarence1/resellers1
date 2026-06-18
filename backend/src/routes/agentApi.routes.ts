@@ -7,6 +7,7 @@ import { Order } from '../models/Order';
 import { getOrCreateWallet } from '../services/walletService';
 import { createOrder, validateBulkOrders, processBulkOrders } from '../services/orderService';
 import { getNetworkStockList } from '../services/networkStockService';
+import { getAgentPrice } from '../services/agentPricingService';
 
 const router = Router();
 router.use(apiLimiter, agentApiAuth);
@@ -24,15 +25,25 @@ router.get('/networks', asyncHandler(async (_req, res) => {
 }));
 
 // Packages
-router.get('/packages', asyncHandler(async (req, res) => {
+router.get('/packages', asyncHandler(async (req: AgentApiRequest, res) => {
   const stock = await getNetworkStockList();
   const inStock = new Set(stock.filter((s) => s.inStock).map((s) => s.network));
   const filter: Record<string, unknown> = { isEnabled: true };
   if (req.query.network) filter.network = req.query.network;
   const packages = await Package.find(filter).select('network bundleSize agentPrice').sort({ sortOrder: 1 });
+  const agentId = req.user!._id;
+  const filtered = packages.filter((p) => inStock.has(p.network));
+  const data = await Promise.all(
+    filtered.map(async (p) => ({
+      _id: p._id,
+      network: p.network,
+      bundleSize: p.bundleSize,
+      agentPrice: await getAgentPrice(agentId, p._id, p),
+    }))
+  );
   res.json({
     success: true,
-    data: packages.filter((p) => inStock.has(p.network)),
+    data,
   });
 }));
 

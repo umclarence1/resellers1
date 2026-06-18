@@ -5,6 +5,7 @@ import { isValidOrderStatus, normalizeOrderStatus } from '../utils/orderStatus';
 
 export type OrderStatus = 'pending' | 'processing' | 'delivered' | 'failed' | 'refunded' | 'cancelled';
 export type OrderSource = 'agent' | 'agent_api' | 'reseller_store' | 'admin';
+export type FulfillmentProvider = 'smartdatahub' | 'datamax';
 
 export interface IOrderStatusHistory {
   step: string;
@@ -41,6 +42,7 @@ export interface IOrder extends Document {
   providerBatchId?: string;
   providerReference?: string;
   providerStatus?: string;
+  fulfillmentProvider?: FulfillmentProvider;
   statusHistory?: IOrderStatusHistory[];
   complaintDeadline: Date;
   createdAt: Date;
@@ -118,6 +120,7 @@ const orderSchema = new Schema<IOrder>(
     providerBatchId: String,
     providerReference: String,
     providerStatus: String,
+    fulfillmentProvider: { type: String, enum: ['smartdatahub', 'datamax'] },
     statusHistory: [
       {
         step: String,

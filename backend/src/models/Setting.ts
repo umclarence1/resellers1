@@ -21,10 +21,14 @@ export interface IServiceImage {
   isAvailable: boolean;
 }
 
+export type FulfillmentProvider = 'smartdatahub' | 'datamax';
+export type FulfillmentNetworkRoute = 'default' | FulfillmentProvider | 'off';
+
 export interface IFulfillmentSettings {
   /** Master switch — when false, no orders are sent to the external API */
   enabled: boolean;
-  networkRouting: Record<Network, boolean>;
+  defaultProvider: FulfillmentProvider;
+  networkRouting: Record<Network, FulfillmentNetworkRoute>;
 }
 
 export interface ISetting extends Document {
@@ -65,10 +69,11 @@ const settingSchema = new Schema<ISetting>(
     },
     fulfillmentSettings: {
       enabled: { type: Boolean, default: true },
+      defaultProvider: { type: String, enum: ['smartdatahub', 'datamax'], default: 'smartdatahub' },
       networkRouting: {
-        MTN: { type: Boolean, default: false },
-        Telecel: { type: Boolean, default: false },
-        AirtelTigo: { type: Boolean, default: false },
+        MTN: { type: String, enum: ['default', 'smartdatahub', 'datamax', 'off'], default: 'off' },
+        Telecel: { type: String, enum: ['default', 'smartdatahub', 'datamax', 'off'], default: 'off' },
+        AirtelTigo: { type: String, enum: ['default', 'smartdatahub', 'datamax', 'off'], default: 'off' },
       },
     },
     serviceImages: [

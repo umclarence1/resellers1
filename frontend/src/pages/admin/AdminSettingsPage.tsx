@@ -14,13 +14,17 @@ import AdminPasswordConfirm from '@/components/admin/AdminPasswordConfirm';
 import { getApiHostname } from '@/lib/deploy';
 
 type FulfillmentNetwork = 'MTN' | 'Telecel' | 'AirtelTigo';
+type FulfillmentProvider = 'smartdatahub' | 'datamax';
+type FulfillmentNetworkRoute = 'default' | FulfillmentProvider | 'off';
 
 type FulfillmentSettings = {
   enabled: boolean;
-  networkRouting: Record<FulfillmentNetwork, boolean>;
-  apiConfigured: boolean;
-  providerName?: string;
-  apiUrl?: string;
+  defaultProvider: FulfillmentProvider;
+  networkRouting: Record<FulfillmentNetwork, FulfillmentNetworkRoute>;
+  providers: {
+    smartdatahub: { configured: boolean; apiUrl: string };
+    datamax: { configured: boolean; apiUrl: string };
+  };
   webhookUrl: string;
 };
 
@@ -28,6 +32,13 @@ const FULFILLMENT_NETWORKS: { id: FulfillmentNetwork; label: string }[] = [
   { id: 'MTN', label: 'MTN' },
   { id: 'Telecel', label: 'Telecel' },
   { id: 'AirtelTigo', label: 'AirtelTigo' },
+];
+
+const NETWORK_ROUTE_OPTIONS: { value: FulfillmentNetworkRoute; label: string }[] = [
+  { value: 'default', label: 'Use default' },
+  { value: 'smartdatahub', label: 'Smart Data Hub' },
+  { value: 'datamax', label: 'Datamax' },
+  { value: 'off', label: 'Off' },
 ];
 
 type SettingsData = {
@@ -58,10 +69,23 @@ const defaultSettings: SettingsData = {
 
 const defaultFulfillment: FulfillmentSettings = {
   enabled: false,
-  networkRouting: { MTN: false, Telecel: false, AirtelTigo: false },
-  apiConfigured: false,
+  defaultProvider: 'smartdatahub',
+  networkRouting: { MTN: 'off', Telecel: 'off', AirtelTigo: 'off' },
+  providers: {
+    smartdatahub: { configured: false, apiUrl: 'https://smartdatahubgh.com/api/v1' },
+    datamax: { configured: false, apiUrl: 'https://datamax.site/wp-json/api/v1' },
+  },
   webhookUrl: '',
 };
+
+function normalizeNetworkRoute(value: unknown): FulfillmentNetworkRoute {
+  if (value === true) return 'smartdatahub';
+  if (value === false) return 'off';
+  if (value === 'default' || value === 'smartdatahub' || value === 'datamax' || value === 'off') {
+    return value;
+  }
+  return 'off';
+}
 
 type SettingsApiData = Partial<SettingsData> & {
   /** @deprecated Legacy field from before Paystack charge was unified */
@@ -83,18 +107,28 @@ function normalizeSettings(data: SettingsApiData): SettingsData {
   };
 }
 
-function normalizeFulfillment(data: Partial<FulfillmentSettings> | null): FulfillmentSettings {
+function normalizeFulfillment(data: Partial<FulfillmentSettings> & Record<string, unknown> | null): FulfillmentSettings {
   if (!data) return defaultFulfillment;
+  const legacyApiConfigured = Boolean(data.apiConfigured);
+  const providers = data.providers as FulfillmentSettings['providers'] | undefined;
   return {
     enabled: Boolean(data.enabled),
-    apiConfigured: Boolean(data.apiConfigured),
-    providerName: data.providerName,
-    apiUrl: data.apiUrl,
-    webhookUrl: data.webhookUrl || '',
+    defaultProvider: data.defaultProvider === 'datamax' ? 'datamax' : 'smartdatahub',
+    webhookUrl: String(data.webhookUrl || ''),
+    providers: {
+      smartdatahub: {
+        configured: Boolean(providers?.smartdatahub?.configured ?? legacyApiConfigured),
+        apiUrl: providers?.smartdatahub?.apiUrl || 'https://smartdatahubgh.com/api/v1',
+      },
+      datamax: {
+        configured: Boolean(providers?.datamax?.configured),
+        apiUrl: providers?.datamax?.apiUrl || 'https://datamax.site/wp-json/api/v1',
+      },
+    },
     networkRouting: {
-      MTN: data.networkRouting?.MTN ?? false,
-      Telecel: data.networkRouting?.Telecel ?? false,
-      AirtelTigo: data.networkRouting?.AirtelTigo ?? false,
+      MTN: normalizeNetworkRoute(data.networkRouting?.MTN),
+      Telecel: normalizeNetworkRoute(data.networkRouting?.Telecel),
+      AirtelTigo: normalizeNetworkRoute(data.networkRouting?.AirtelTigo),
     },
   };
 }
@@ -127,8 +161,11 @@ export default function AdminSettingsPage() {
   const [resetting, setResetting] = useState(false);
   const [resetSummary, setResetSummary] = useState<Record<string, number> | null>(null);
   const [fulfillment, setFulfillment] = useState<FulfillmentSettings | null>(null);
-  const [fulfillmentSaving, setFulfillmentSaving] = useState<FulfillmentNetwork | 'master' | null>(null);
-  const [testingApi, setTestingApi] = useState(false);
+  const [fulfillmentSaving, setFulfillmentSaving] = useState<
+    FulfillmentNetwork | 'master' | 'defaultProvider' | null
+  >(null);
+  const [testingApi, setTestingApi] = useState<'smartdatahub' | 'datamax' | null>(null);
+  const [checkingBalance, setCheckingBalance] = useState(false);
   const [retryingQueued, setRetryingQueued] = useState(false);
 
   useEffect(() => {
@@ -304,10 +341,14 @@ export default function AdminSettingsPage() {
     }
   };
 
-  const saveFulfillment = async (patch: {
-    enabled?: boolean;
-    networkRouting?: Partial<Record<FulfillmentNetwork, boolean>>;
-  }, savingKey: FulfillmentNetwork | 'master') => {
+  const saveFulfillment = async (
+    patch: {
+      enabled?: boolean;
+      defaultProvider?: FulfillmentProvider;
+      networkRouting?: Partial<Record<FulfillmentNetwork, FulfillmentNetworkRoute>>;
+    },
+    savingKey: FulfillmentNetwork | 'master' | 'defaultProvider'
+  ) => {
     if (!fulfillment) return;
     setFulfillmentSaving(savingKey);
     setError('');
@@ -315,6 +356,7 @@ export default function AdminSettingsPage() {
     try {
       const res = await api.put('/admin/settings/fulfillment', {
         enabled: patch.enabled ?? fulfillment.enabled,
+        defaultProvider: patch.defaultProvider ?? fulfillment.defaultProvider,
         networkRouting: {
           ...fulfillment.networkRouting,
           ...patch.networkRouting,
@@ -329,25 +371,40 @@ export default function AdminSettingsPage() {
     }
   };
 
-  const toggleNetworkRouting = (network: FulfillmentNetwork) => {
-    if (!fulfillment) return;
-    saveFulfillment(
-      { networkRouting: { [network]: !fulfillment.networkRouting[network] } },
-      network
-    );
-  };
-
-  const testFulfillmentApi = async () => {
-    setTestingApi(true);
+  const testFulfillmentApi = async (provider: FulfillmentProvider) => {
+    setTestingApi(provider);
     setError('');
     setMessage('');
     try {
-      const res = await api.post('/admin/settings/fulfillment/test');
-      setMessage(res.data.data?.message || 'Smart Data Hub connection successful.');
+      const res = await api.post(`/admin/settings/fulfillment/test?provider=${provider}`);
+      const balance =
+        provider === 'datamax' && res.data.data?.balance != null
+          ? ` Balance: GHS ${Number(res.data.data.balance).toFixed(2)}.`
+          : '';
+      setMessage((res.data.data?.message || `${provider} connection successful.`) + balance);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'API connection test failed');
     } finally {
-      setTestingApi(false);
+      setTestingApi(null);
+    }
+  };
+
+  const checkDatamaxBalance = async () => {
+    setCheckingBalance(true);
+    setError('');
+    setMessage('');
+    try {
+      const res = await api.post('/admin/settings/fulfillment/check-balance?provider=datamax');
+      const balance = res.data.data?.balance;
+      setMessage(
+        balance != null
+          ? `Datamax wallet balance: GHS ${Number(balance).toFixed(2)}`
+          : res.data.data?.message || 'Balance retrieved.'
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to check Datamax balance');
+    } finally {
+      setCheckingBalance(false);
     }
   };
 
@@ -360,7 +417,7 @@ export default function AdminSettingsPage() {
       const count = res.data.data?.retried ?? 0;
       setMessage(
         count > 0
-          ? `Resubmitted ${count} queued order(s) to Smart Data Hub.`
+          ? `Resubmitted ${count} queued order(s) to fulfillment providers.`
           : 'No queued orders needed resubmission.'
       );
     } catch (err) {
@@ -415,22 +472,26 @@ export default function AdminSettingsPage() {
             <div className="flex items-center gap-2 mb-2">
               <PlugZap className="w-5 h-5 text-sky-600" />
               <h2 className="text-lg font-semibold text-gray-900">
-                Smart Data Hub API routing
+                Fulfillment API routing
               </h2>
             </div>
             <p className="text-sm text-gray-600 mb-4">
-              Orders are sent to Smart Data Hub (HMAC-SHA256). Choose which networks forward
-              automatically. If the provider wallet is empty, orders queue and resubmit when
-              you fund the account — no duplicates (idempotency per order ID).
+              Route orders to Smart Data Hub or Datamax per network. If a provider wallet is empty,
+              orders queue and resubmit when funded — no duplicates (idempotency per order ID).
             </p>
 
-            {!fulfillment?.apiConfigured && (
+            {fulfillment && !fulfillment.providers.smartdatahub.configured && !fulfillment.providers.datamax.configured && (
               <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4">
-                Set <code className="text-xs">FULFILLMENT_API_ENABLED=true</code>,{' '}
-                <code className="text-xs">FULFILLMENT_API_KEY</code>, and{' '}
-                <code className="text-xs">FULFILLMENT_API_SECRET</code> on the server. Whitelist{' '}
-                <code className="text-xs">{getApiHostname()}</code> in Smart Data
-                Hub → API Management.
+                Configure at least one provider on the server:
+                <br />
+                Smart Data Hub: <code className="text-xs">FULFILLMENT_API_ENABLED</code>,{' '}
+                <code className="text-xs">FULFILLMENT_API_KEY</code>,{' '}
+                <code className="text-xs">FULFILLMENT_API_SECRET</code>
+                <br />
+                Datamax: <code className="text-xs">DATAMAX_API_ENABLED</code>,{' '}
+                <code className="text-xs">DATAMAX_API_KEY</code>
+                <br />
+                Whitelist <code className="text-xs">{getApiHostname()}</code> where required.
               </p>
             )}
 
@@ -455,33 +516,71 @@ export default function AdminSettingsPage() {
                   </span>
                 </div>
 
+                <div className="mb-5">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Default provider
+                  </label>
+                  <select
+                    className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 min-w-[220px] disabled:opacity-50"
+                    disabled={fulfillmentSaving !== null || !fulfillment.enabled}
+                    value={fulfillment.defaultProvider}
+                    onChange={(e) =>
+                      saveFulfillment(
+                        { defaultProvider: e.target.value as FulfillmentProvider },
+                        'defaultProvider'
+                      )
+                    }
+                  >
+                    <option value="smartdatahub">Smart Data Hub</option>
+                    <option value="datamax">Datamax</option>
+                  </select>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Used for networks set to &quot;Use default&quot;
+                  </p>
+                </div>
+
                 <div className="grid sm:grid-cols-3 gap-3 mb-4">
                   {FULFILLMENT_NETWORKS.map((network) => {
-                    const active =
-                      fulfillment.enabled && fulfillment.networkRouting[network.id];
+                    const route = fulfillment.networkRouting[network.id];
+                    const routeLabel =
+                      NETWORK_ROUTE_OPTIONS.find((o) => o.value === route)?.label || route;
                     return (
-                      <button
+                      <div
                         key={network.id}
-                        type="button"
-                        disabled={fulfillmentSaving !== null || !fulfillment.enabled}
-                        onClick={() => toggleNetworkRouting(network.id)}
                         className={cn(
-                          'rounded-xl border-2 p-4 text-left transition',
-                          active
+                          'rounded-xl border-2 p-4 text-left',
+                          fulfillment.enabled && route !== 'off'
                             ? 'border-sky-500 bg-sky-50'
-                            : 'border-gray-200 bg-gray-50 hover:border-gray-300',
-                          !fulfillment.enabled && 'opacity-50 cursor-not-allowed'
+                            : 'border-gray-200 bg-gray-50',
+                          !fulfillment.enabled && 'opacity-50'
                         )}
                       >
                         <p className="font-semibold text-gray-900">{network.label}</p>
-                        <p className="text-sm mt-1 text-gray-600">
-                          {fulfillmentSaving === network.id
-                            ? 'Saving...'
-                            : active
-                              ? 'Sending to external API'
-                              : 'Not sent to external API'}
+                        <select
+                          className="mt-2 w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-sm text-gray-900 disabled:opacity-50"
+                          disabled={fulfillmentSaving !== null || !fulfillment.enabled}
+                          value={route}
+                          onChange={(e) =>
+                            saveFulfillment(
+                              {
+                                networkRouting: {
+                                  [network.id]: e.target.value as FulfillmentNetworkRoute,
+                                },
+                              },
+                              network.id
+                            )
+                          }
+                        >
+                          {NETWORK_ROUTE_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                        <p className="text-xs mt-2 text-gray-600">
+                          {fulfillmentSaving === network.id ? 'Saving...' : routeLabel}
                         </p>
-                      </button>
+                      </div>
                     );
                   })}
                 </div>
@@ -491,26 +590,55 @@ export default function AdminSettingsPage() {
                     type="button"
                     size="sm"
                     variant="outline"
-                    disabled={testingApi || !fulfillment.apiConfigured}
-                    onClick={testFulfillmentApi}
+                    disabled={testingApi !== null || !fulfillment.providers.smartdatahub.configured}
+                    onClick={() => testFulfillmentApi('smartdatahub')}
                   >
-                    {testingApi ? 'Testing...' : 'Test API connection'}
+                    {testingApi === 'smartdatahub' ? 'Testing...' : 'Test Smart Data Hub'}
                   </Button>
                   <Button
                     type="button"
                     size="sm"
                     variant="outline"
-                    disabled={retryingQueued || !fulfillment.apiConfigured}
+                    disabled={testingApi !== null || !fulfillment.providers.datamax.configured}
+                    onClick={() => testFulfillmentApi('datamax')}
+                  >
+                    {testingApi === 'datamax' ? 'Testing...' : 'Test Datamax'}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={checkingBalance || !fulfillment.providers.datamax.configured}
+                    onClick={checkDatamaxBalance}
+                  >
+                    {checkingBalance ? 'Checking...' : 'Datamax balance'}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={
+                      retryingQueued ||
+                      (!fulfillment.providers.smartdatahub.configured &&
+                        !fulfillment.providers.datamax.configured)
+                    }
                     onClick={retryQueuedOrders}
                   >
                     {retryingQueued ? 'Retrying...' : 'Retry queued orders'}
                   </Button>
                 </div>
 
-                <p className="text-xs text-gray-500 break-all">
-                  Provider: {fulfillment.providerName || 'Smart Data Hub'} —{' '}
-                  {fulfillment.apiUrl || 'https://smartdatahubgh.com/api/v1'}
-                </p>
+                <div className="text-xs text-gray-500 space-y-1 break-all">
+                  <p>
+                    Smart Data Hub: {fulfillment.providers.smartdatahub.apiUrl}
+                    {fulfillment.providers.smartdatahub.configured ? ' (configured)' : ' (not configured)'}
+                  </p>
+                  <p>
+                    Datamax: {fulfillment.providers.datamax.apiUrl}
+                    {fulfillment.providers.datamax.configured ? ' (configured)' : ' (not configured)'}
+                  </p>
+                  <p>Webhook: {fulfillment.webhookUrl}</p>
+                </div>
               </>
             )}
           </Card>

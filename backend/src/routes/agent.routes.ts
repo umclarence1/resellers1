@@ -13,6 +13,7 @@ import { getDateRanges } from '../utils/helpers';
 import { getOrCreateWallet } from '../services/walletService';
 import { WalletTransaction } from '../models/WalletTransaction';
 import { createOrder, validateBulkOrders, processBulkOrders } from '../services/orderService';
+import { getAgentPrice } from '../services/agentPricingService';
 import { getSettings } from '../services/settingsService';
 import { initWalletDepositPayment } from '../services/paystackPaymentService';
 import { User } from '../models/User';
@@ -155,7 +156,7 @@ router.get('/networks', asyncHandler(async (_req, res) => {
   res.json({ success: true, data: stock });
 }));
 
-router.get('/packages', asyncHandler(async (req, res) => {
+router.get('/packages', asyncHandler(async (req: AuthRequest, res) => {
   const stock = await getNetworkStockList();
   const inStock = new Set(stock.filter((s) => s.inStock).map((s) => s.network));
   const filter: Record<string, unknown> = { isEnabled: true };
@@ -167,15 +168,17 @@ router.get('/packages', asyncHandler(async (req, res) => {
     filter.network = network;
   }
   const packages = await Package.find(filter).sort({ sortOrder: 1 });
-  const data = packages
-    .filter((p) => inStock.has(p.network))
-    .map((p) => ({
+  const agentId = req.user!._id;
+  const filtered = packages.filter((p) => inStock.has(p.network));
+  const data = await Promise.all(
+    filtered.map(async (p) => ({
       _id: p._id,
       network: p.network,
       bundleSize: p.bundleSize,
-      agentPrice: p.agentPrice,
+      agentPrice: await getAgentPrice(agentId, p._id, p),
       sortOrder: p.sortOrder,
-    }));
+    }))
+  );
   res.json({ success: true, data });
 }));
 

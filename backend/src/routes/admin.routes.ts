@@ -45,6 +45,12 @@ import {
   syncFulfillmentStatuses,
 } from '../services/fulfillmentProviderService';
 import { isSmartDataHubConfigured, testSmartDataHubConnection } from '../services/smartDataHubClient';
+import { isDatamaxConfigured, testDatamaxConnection, checkDatamaxBalance } from '../services/datamaxClient';
+import { migrateFulfillmentSettings, normalizeNetworkRoute } from '../services/settingsService';
+import {
+  setAgentCustomPrice,
+  clearAgentCustomPrices,
+} from '../services/agentPricingService';
 import { adminSearch, buildOrderSearchFilter } from '../services/adminSearchService';
 import { creditWallet } from '../services/walletService';
 import { getResellerPoolSummary, resellerProfitRange } from '../services/resellerProfitService';
@@ -280,6 +286,57 @@ router.get('/agents/:id/activity', asyncHandler(async (req, res) => {
     WalletTransaction.find({ userId: req.params.id }).sort({ createdAt: -1 }).limit(50),
   ]);
   res.json({ success: true, data: { orders, transactions } });
+}));
+
+router.get('/agents/:id/prices', asyncHandler(async (req, res) => {
+  const agent = await User.findOne({ _id: req.params.id, role: 'agent' });
+  if (!agent) throw new AppError('Agent not found', 404);
+
+  const packages = await Package.find({ isEnabled: true }).sort({ sortOrder: 1 });
+  const data = packages.map((pkg) => {
+    const customPrice = agent.agentApi?.customPrices?.get(pkg._id.toString()) ?? null;
+    return {
+      _id: pkg._id,
+      network: pkg.network,
+      bundleSize: pkg.bundleSize,
+      costPrice: pkg.costPrice,
+      globalAgentPrice: pkg.agentPrice,
+      customPrice,
+      effectivePrice: customPrice ?? pkg.agentPrice,
+      maxSellingPrice: pkg.maxSellingPrice,
+    };
+  });
+
+  res.json({ success: true, data });
+}));
+
+router.put('/agents/:id/prices/:packageId', asyncHandler(async (req: AuthRequest, res) => {
+  const agentId = String(req.params.id);
+  const packageId = String(req.params.packageId);
+  const { price } = req.body;
+  if (price === null || price === undefined || price === '') {
+    await setAgentCustomPrice(agentId, packageId, null);
+  } else {
+    const numericPrice = Number(price);
+    if (!Number.isFinite(numericPrice) || numericPrice <= 0) {
+      throw new AppError('Price must be a positive number');
+    }
+    await setAgentCustomPrice(agentId, packageId, numericPrice);
+  }
+
+  await logAudit(req, 'update', 'agent_custom_price', agentId, {
+    packageId,
+    price: price ?? null,
+  });
+
+  res.json({ success: true, message: 'Agent price updated' });
+}));
+
+router.delete('/agents/:id/prices', asyncHandler(async (req: AuthRequest, res) => {
+  const agentId = String(req.params.id);
+  const cleared = await clearAgentCustomPrices(agentId);
+  await logAudit(req, 'delete', 'agent_custom_prices', agentId, { cleared });
+  res.json({ success: true, data: { cleared } });
 }));
 
 // Package management
@@ -905,32 +962,68 @@ router.post('/settings/withdrawal-pool/deposit', requireAdminOtp, asyncHandler(a
 }));
 
 // External fulfillment API routing (per network)
+const FULFILLMENT_NETWORKS = ['MTN', 'Telecel', 'AirtelTigo'] as const;
+
+function buildFulfillmentSettingsPayload(settings: Awaited<ReturnType<typeof getSettings>>) {
+  const fulfillment = settings.fulfillmentSettings;
+  const migrated = migrateFulfillmentSettings(fulfillment).settings;
+  return {
+    enabled: migrated.enabled,
+    defaultProvider: migrated.defaultProvider,
+    networkRouting: {
+      MTN: migrated.networkRouting.MTN,
+      Telecel: migrated.networkRouting.Telecel,
+      AirtelTigo: migrated.networkRouting.AirtelTigo,
+    },
+    providers: {
+      smartdatahub: {
+        configured: isSmartDataHubConfigured(),
+        apiUrl: env.fulfillment.apiUrl || 'https://smartdatahubgh.com/api/v1',
+      },
+      datamax: {
+        configured: isDatamaxConfigured(),
+        apiUrl: env.datamax.apiUrl || 'https://datamax.site/wp-json/api/v1',
+      },
+    },
+    webhookUrl: `${env.apiUrl}/api/webhooks/fulfillment`,
+  };
+}
+
 router.get('/settings/fulfillment', asyncHandler(async (_req, res) => {
   const settings = await getSettings();
-  const fulfillment = settings.fulfillmentSettings;
-  const routing = fulfillment?.networkRouting;
   res.json({
     success: true,
-    data: {
-      enabled: fulfillment?.enabled ?? false,
-      networkRouting: {
-        MTN: routing?.MTN ?? false,
-        Telecel: routing?.Telecel ?? false,
-        AirtelTigo: routing?.AirtelTigo ?? false,
-      },
-      apiConfigured: isSmartDataHubConfigured(),
-      providerName: 'Smart Data Hub',
-      apiUrl: env.fulfillment.apiUrl || 'https://smartdatahubgh.com/api/v1',
-      webhookUrl: `${env.apiUrl}/api/webhooks/fulfillment`,
-    },
+    data: buildFulfillmentSettingsPayload(settings),
   });
 }));
 
-router.post('/settings/fulfillment/test', asyncHandler(async (_req, res) => {
+router.post('/settings/fulfillment/test', asyncHandler(async (req, res) => {
+  const provider = String(req.query.provider || 'smartdatahub');
+  if (provider === 'datamax') {
+    if (!isDatamaxConfigured()) {
+      throw new AppError('Datamax API is not fully configured on the server', 400);
+    }
+    const result = await testDatamaxConnection();
+    res.json({ success: true, data: result });
+    return;
+  }
+
   if (!isSmartDataHubConfigured()) {
     throw new AppError('Smart Data Hub API is not fully configured on the server', 400);
   }
   const result = await testSmartDataHubConnection();
+  res.json({ success: true, data: result });
+}));
+
+router.post('/settings/fulfillment/check-balance', asyncHandler(async (req, res) => {
+  const provider = String(req.query.provider || 'datamax');
+  if (provider !== 'datamax') {
+    throw new AppError('Balance check is only available for Datamax', 400);
+  }
+  if (!isDatamaxConfigured()) {
+    throw new AppError('Datamax API is not fully configured on the server', 400);
+  }
+  const result = await checkDatamaxBalance();
   res.json({ success: true, data: result });
 }));
 
@@ -941,23 +1034,23 @@ router.post('/settings/fulfillment/retry-queued', asyncHandler(async (_req, res)
 
 router.put('/settings/fulfillment', asyncHandler(async (req: AuthRequest, res) => {
   const settings = await getSettings();
-  const allowedNetworks = ['MTN', 'Telecel', 'AirtelTigo'] as const;
-
-  if (!settings.fulfillmentSettings?.networkRouting) {
-    settings.fulfillmentSettings = {
-      enabled: false,
-      networkRouting: { MTN: false, Telecel: false, AirtelTigo: false },
-    };
-  }
+  const migrated = migrateFulfillmentSettings(settings.fulfillmentSettings).settings;
+  settings.fulfillmentSettings = migrated;
 
   if (typeof req.body.enabled === 'boolean') {
     settings.fulfillmentSettings.enabled = req.body.enabled;
   }
 
+  if (req.body.defaultProvider === 'smartdatahub' || req.body.defaultProvider === 'datamax') {
+    settings.fulfillmentSettings.defaultProvider = req.body.defaultProvider;
+  }
+
   if (req.body.networkRouting && typeof req.body.networkRouting === 'object') {
-    for (const network of allowedNetworks) {
-      if (typeof req.body.networkRouting[network] === 'boolean') {
-        settings.fulfillmentSettings.networkRouting[network] = req.body.networkRouting[network];
+    for (const network of FULFILLMENT_NETWORKS) {
+      if (req.body.networkRouting[network] !== undefined) {
+        settings.fulfillmentSettings.networkRouting[network] = normalizeNetworkRoute(
+          req.body.networkRouting[network]
+        );
       }
     }
     settings.markModified('fulfillmentSettings.networkRouting');
@@ -966,21 +1059,9 @@ router.put('/settings/fulfillment', asyncHandler(async (req: AuthRequest, res) =
   await settings.save();
   await logAudit(req, 'update', 'fulfillment_settings');
 
-  const updatedRouting = settings.fulfillmentSettings.networkRouting;
   res.json({
     success: true,
-    data: {
-      enabled: settings.fulfillmentSettings.enabled,
-      networkRouting: {
-        MTN: updatedRouting.MTN,
-        Telecel: updatedRouting.Telecel,
-        AirtelTigo: updatedRouting.AirtelTigo,
-      },
-      apiConfigured: isSmartDataHubConfigured(),
-      providerName: 'Smart Data Hub',
-      apiUrl: env.fulfillment.apiUrl || 'https://smartdatahubgh.com/api/v1',
-      webhookUrl: `${env.apiUrl}/api/webhooks/fulfillment`,
-    },
+    data: buildFulfillmentSettingsPayload(settings),
   });
 }));
 

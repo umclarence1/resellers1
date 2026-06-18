@@ -11,6 +11,8 @@ import { applyOrderStatusUpdate, submitOrderToProvider } from './fulfillmentProv
 import { snapshotPlatformProfitForOrder } from './platformProfitService';
 import { getAdminBasePrice, computeResellerOrderProfit } from './profitFormulas';
 import { assertNetworkInStock } from './networkStockService';
+import { resolveFulfillmentProvider } from './settingsService';
+import { getAgentPrice } from './agentPricingService';
 import { env } from '../config/env';
 import { withMongoTransaction, sessionOpts } from '../utils/mongoTransaction';
 import { appendAuditLog } from './immutableAuditService';
@@ -99,7 +101,8 @@ export const createOrder = async (input: CreateOrderInput) => {
   await assertNetworkInStock(pkg.network);
 
   const settings = await getSettings();
-  const apiCost = pkg.costPrice;
+  const fulfillmentProvider = await resolveFulfillmentProvider(pkg.network);
+  const apiCost = fulfillmentProvider === 'datamax' ? pkg.agentPrice : pkg.costPrice;
   let sellingPrice = input.sellingPrice ?? pkg.agentPrice;
   let profit = 0;
 
@@ -109,7 +112,9 @@ export const createOrder = async (input: CreateOrderInput) => {
     !input.skipWalletDebit;
 
   if (input.source === 'agent' || input.source === 'agent_api') {
-    sellingPrice = pkg.agentPrice;
+    sellingPrice = input.agentId
+      ? await getAgentPrice(input.agentId, pkg._id, pkg)
+      : pkg.agentPrice;
   } else if (input.source === 'reseller_store') {
     const basePrice = pkg.resellerBasePrice;
     const customPrice = input.resellerId
@@ -165,6 +170,7 @@ export const createOrder = async (input: CreateOrderInput) => {
     status: orderStatus,
     source: input.source,
     paystackReference: input.paystackReference,
+    fulfillmentProvider: fulfillmentProvider ?? undefined,
     complaintDeadline: new Date(Date.now() + 24 * 60 * 60 * 1000),
   };
 
@@ -210,7 +216,7 @@ export const createOrder = async (input: CreateOrderInput) => {
     throw toOrderCreationError(err);
   }
 
-  if (env.fulfillment.enabled) {
+  if (env.fulfillment.enabled || env.datamax.enabled) {
     await submitOrderToProvider(order);
   } else if (env.devAutoDeliver) {
   // Simulate order processing (local dev only)

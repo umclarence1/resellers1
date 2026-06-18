@@ -1,4 +1,4 @@
-import { Setting } from '../models/Setting';
+import { Setting, IFulfillmentSettings, FulfillmentNetworkRoute, FulfillmentProvider } from '../models/Setting';
 import { Network } from '../models/Package';
 import { User } from '../models/User';
 import { Complaint } from '../models/Complaint';
@@ -15,12 +15,15 @@ export interface ComplaintOrderContext {
   createdAt: Date;
 }
 
-const defaultFulfillmentSettings = () => ({
+const NETWORKS: Network[] = ['MTN', 'Telecel', 'AirtelTigo'];
+
+const defaultFulfillmentSettings = (): IFulfillmentSettings => ({
   enabled: true,
+  defaultProvider: 'smartdatahub',
   networkRouting: {
-    MTN: false,
-    Telecel: false,
-    AirtelTigo: false,
+    MTN: 'off',
+    Telecel: 'off',
+    AirtelTigo: 'off',
   },
 });
 
@@ -34,6 +37,53 @@ const defaultComplaintSettings = () => ({
   userOverrides: new Map<string, boolean>(),
   noticeOverridesComplaints: false,
 });
+
+export function normalizeNetworkRoute(value: unknown): FulfillmentNetworkRoute {
+  if (value === true) return 'smartdatahub';
+  if (value === false) return 'off';
+  if (value === 'default' || value === 'smartdatahub' || value === 'datamax' || value === 'off') {
+    return value;
+  }
+  return 'off';
+}
+
+export function migrateFulfillmentSettings(
+  fulfillment: Partial<IFulfillmentSettings> | undefined
+): { settings: IFulfillmentSettings; dirty: boolean } {
+  const base = defaultFulfillmentSettings();
+  const current = fulfillment || {};
+  let dirty = false;
+
+  const settings: IFulfillmentSettings = {
+    enabled: current.enabled ?? base.enabled,
+    defaultProvider: current.defaultProvider === 'datamax' ? 'datamax' : 'smartdatahub',
+    networkRouting: { ...base.networkRouting },
+  };
+
+  if (!current.defaultProvider) dirty = true;
+
+  const routing = current.networkRouting as Record<string, unknown> | undefined;
+  for (const network of NETWORKS) {
+    const raw = routing?.[network];
+    const normalized = normalizeNetworkRoute(raw);
+    settings.networkRouting[network] = normalized;
+    if (raw !== normalized) dirty = true;
+  }
+
+  return { settings, dirty };
+}
+
+export function resolveFulfillmentProviderFromSettings(
+  settings: IFulfillmentSettings,
+  network: Network
+): FulfillmentProvider | null {
+  if (!settings.enabled) return null;
+
+  const route = normalizeNetworkRoute(settings.networkRouting?.[network]);
+  if (route === 'off') return null;
+  if (route === 'smartdatahub' || route === 'datamax') return route;
+  return settings.defaultProvider || 'smartdatahub';
+}
 
 export const getSettings = async () => {
   let settings = await Setting.findOne();
@@ -51,8 +101,9 @@ export const getSettings = async () => {
   }
 
   let dirty = false;
-  if (!settings.fulfillmentSettings?.networkRouting) {
-    settings.fulfillmentSettings = defaultFulfillmentSettings();
+  const migrated = migrateFulfillmentSettings(settings.fulfillmentSettings);
+  if (migrated.dirty || !settings.fulfillmentSettings?.networkRouting) {
+    settings.fulfillmentSettings = migrated.settings;
     dirty = true;
   }
   if (!settings.complaintSettings) {
@@ -67,11 +118,15 @@ export const getSettings = async () => {
   return settings;
 };
 
-export const isFulfillmentRoutingEnabledForNetwork = async (network: string): Promise<boolean> => {
+export const resolveFulfillmentProvider = async (
+  network: string
+): Promise<FulfillmentProvider | null> => {
   const settings = await getSettings();
-  if (!settings.fulfillmentSettings?.enabled) return false;
-  const key = network as Network;
-  return Boolean(settings.fulfillmentSettings.networkRouting?.[key]);
+  return resolveFulfillmentProviderFromSettings(settings.fulfillmentSettings, network as Network);
+};
+
+export const isFulfillmentRoutingEnabledForNetwork = async (network: string): Promise<boolean> => {
+  return (await resolveFulfillmentProvider(network)) !== null;
 };
 
 export const isComplaintsEnabledForUser = async (userId: string): Promise<boolean> => {

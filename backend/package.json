@@ -11,6 +11,7 @@
     "audit:production": "npm audit --audit-level=critical",
     "scan:secrets": "node scripts/secret-scan.js",
     "test:order-number": "npm run build && node --test dist/tests/orderNumber.test.js",
+    "test:fulfillment": "npm run build && node --test dist/tests/fulfillmentAndPricing.test.js",
     "migrate:order-numbers": "npm run build && node dist/scripts/migrate-order-numbers.js",
     "reset:production": "npm run build && node dist/scripts/production-reset.js"
   },

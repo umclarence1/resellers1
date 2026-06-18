@@ -24,6 +24,7 @@ export interface IAgentApi {
   ipWhitelist: string[];
   webhookUrl?: string;
   isActive: boolean;
+  customPrices?: Map<string, number>;
 }
 
 export interface IUser extends Document {
@@ -71,6 +72,7 @@ const agentApiSchema = new Schema<IAgentApi>(
     ipWhitelist: { type: [String], default: [] },
     webhookUrl: String,
     isActive: { type: Boolean, default: true },
+    customPrices: { type: Map, of: Number, default: {} },
   },
   { _id: false }
 );

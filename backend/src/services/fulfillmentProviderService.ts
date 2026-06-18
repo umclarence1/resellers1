@@ -1,18 +1,24 @@
 import crypto from 'crypto';
 import mongoose from 'mongoose';
 import { secureCompare } from '../utils/secureCompare';
-import { Order, IOrder, OrderStatus } from '../models/Order';
+import { Order, IOrder, OrderStatus, FulfillmentProvider } from '../models/Order';
 import { env } from '../config/env';
 import { createNotification } from './notificationService';
 import { notifyagentWebhook } from './agentWebhookService';
 import { creditWallet } from './walletService';
-import { isFulfillmentRoutingEnabledForNetwork } from './settingsService';
+import { resolveFulfillmentProvider } from './settingsService';
 import {
   SmartDataHubError,
   createSmartDataHubOrder,
   fetchSmartDataHubBulkStatus,
   isSmartDataHubConfigured,
 } from './smartDataHubClient';
+import {
+  DatamaxError,
+  createDatamaxOrder,
+  fetchDatamaxOrderStatus,
+  isDatamaxConfigured,
+} from './datamaxClient';
 import { normalizeOrderStatus } from '../utils/orderStatus';
 
 export interface StatusHistoryEntry {
@@ -25,11 +31,17 @@ export interface StatusHistoryEntry {
 
 const QUEUED_PROVIDER_STATUSES = ['awaiting_provider_balance', 'submit_failed'] as const;
 
+function isFulfillmentProviderConfigured(provider: FulfillmentProvider): boolean {
+  if (provider === 'smartdatahub') return isSmartDataHubConfigured();
+  return isDatamaxConfigured();
+}
+
 /** Strip third-party provider names from text shown to agents and resellers. */
 export function sanitizeClientFulfillmentText(text: string): string {
   return text
     .replace(/smart\s*data\s*hub/gi, 'network')
     .replace(/smartdatahub[^\s]*/gi, 'network')
+    .replace(/datamax[^\s]*/gi, 'network')
     .replace(/\s{2,}/g, ' ')
     .trim();
 }
@@ -73,6 +85,9 @@ function pushHistory(order: IOrder, entry: Omit<StatusHistoryEntry, 'at'> & { at
 }
 
 function isSubmittedToProvider(order: IOrder): boolean {
+  if (order.fulfillmentProvider === 'datamax') {
+    return Boolean(order.providerOrderId);
+  }
   return Boolean(order.providerBatchId || order.providerReference);
 }
 
@@ -159,6 +174,7 @@ export function getOrderTracking(order: IOrder, options?: { forClient?: boolean 
     providerOrderId: forClient ? undefined : order.providerOrderId,
     providerBatchId: forClient ? undefined : order.providerBatchId,
     providerReference: forClient ? undefined : order.providerReference,
+    fulfillmentProvider: forClient ? undefined : order.fulfillmentProvider,
     recipientPhone: order.recipientPhone,
     network: order.network,
     bundleSize: order.bundleSize,
@@ -211,6 +227,7 @@ export async function applyOrderStatusUpdate(
     providerOrderId?: string;
     providerBatchId?: string;
     providerReference?: string;
+    fulfillmentProvider?: FulfillmentProvider;
     stepLabel?: string;
     stepMessage?: string;
   }
@@ -221,6 +238,7 @@ export async function applyOrderStatusUpdate(
   if (update.providerBatchId) order.providerBatchId = update.providerBatchId;
   if (update.providerReference) order.providerReference = update.providerReference;
   if (update.providerStatus) order.providerStatus = update.providerStatus;
+  if (update.fulfillmentProvider) order.fulfillmentProvider = update.fulfillmentProvider;
   if (update.status) {
     order.status = update.status;
   } else if (update.providerStatus) {
@@ -241,16 +259,7 @@ export async function applyOrderStatusUpdate(
   return order;
 }
 
-export async function submitOrderToProvider(order: IOrder): Promise<IOrder | null> {
-  if (!isSmartDataHubConfigured()) return null;
-  if (!(await isFulfillmentRoutingEnabledForNetwork(order.network))) return null;
-
-  if (isSubmittedToProvider(order) && !QUEUED_PROVIDER_STATUSES.includes(
-    order.providerStatus as (typeof QUEUED_PROVIDER_STATUSES)[number]
-  )) {
-    return order;
-  }
-
+async function submitToSmartDataHub(order: IOrder): Promise<IOrder | null> {
   try {
     const response = await createSmartDataHubOrder({
       orderId: order.orderId,
@@ -263,6 +272,7 @@ export async function submitOrderToProvider(order: IOrder): Promise<IOrder | nul
     return applyOrderStatusUpdate(order, {
       status: 'processing',
       providerStatus: 'gateway_processing',
+      fulfillmentProvider: 'smartdatahub',
       providerBatchId: data.batch_id,
       providerOrderId: data.batch_id,
       providerReference: data.order_number || order.orderId,
@@ -273,6 +283,7 @@ export async function submitOrderToProvider(order: IOrder): Promise<IOrder | nul
     if (err instanceof SmartDataHubError && err.statusCode === 402) {
       return applyOrderStatusUpdate(order, {
         providerStatus: 'awaiting_provider_balance',
+        fulfillmentProvider: 'smartdatahub',
         stepLabel: 'Awaiting Provider Balance',
         stepMessage: 'Queued — processing will resume shortly',
       });
@@ -281,6 +292,7 @@ export async function submitOrderToProvider(order: IOrder): Promise<IOrder | nul
     console.error('Smart Data Hub submit failed:', err instanceof Error ? err.message : err);
     return applyOrderStatusUpdate(order, {
       providerStatus: 'submit_failed',
+      fulfillmentProvider: 'smartdatahub',
       stepLabel: 'Gateway Processing',
       stepMessage:
         err instanceof SmartDataHubError
@@ -288,6 +300,73 @@ export async function submitOrderToProvider(order: IOrder): Promise<IOrder | nul
           : 'Could not reach fulfillment gateway — retrying automatically',
     });
   }
+}
+
+async function submitToDatamax(order: IOrder): Promise<IOrder | null> {
+  try {
+    const response = await createDatamaxOrder({
+      orderId: order.orderId,
+      recipientPhone: order.recipientPhone,
+      network: order.network,
+      bundleSize: order.bundleSize,
+    });
+
+    const providerOrderId = response.order_id != null ? String(response.order_id) : undefined;
+    return applyOrderStatusUpdate(order, {
+      status: 'processing',
+      providerStatus: 'gateway_processing',
+      fulfillmentProvider: 'datamax',
+      providerOrderId,
+      providerReference: order.orderId,
+      stepLabel: 'Gateway Processing',
+      stepMessage: response.message
+        ? clientStepMessage(response.message)
+        : 'Order submitted for processing',
+    });
+  } catch (err) {
+    if (err instanceof DatamaxError && err.statusCode === 402) {
+      return applyOrderStatusUpdate(order, {
+        providerStatus: 'awaiting_provider_balance',
+        fulfillmentProvider: 'datamax',
+        stepLabel: 'Awaiting Provider Balance',
+        stepMessage: 'Queued — processing will resume shortly',
+      });
+    }
+
+    console.error('Datamax submit failed:', err instanceof Error ? err.message : err);
+    return applyOrderStatusUpdate(order, {
+      providerStatus: 'submit_failed',
+      fulfillmentProvider: 'datamax',
+      stepLabel: 'Gateway Processing',
+      stepMessage:
+        err instanceof DatamaxError
+          ? clientStepMessage(err.message)
+          : 'Could not reach fulfillment gateway — retrying automatically',
+    });
+  }
+}
+
+export async function submitOrderToProvider(order: IOrder): Promise<IOrder | null> {
+  const provider =
+    order.fulfillmentProvider ?? (await resolveFulfillmentProvider(order.network));
+  if (!provider) return null;
+  if (!isFulfillmentProviderConfigured(provider)) return null;
+
+  if (!order.fulfillmentProvider) {
+    order.fulfillmentProvider = provider;
+  }
+
+  if (
+    isSubmittedToProvider(order) &&
+    !QUEUED_PROVIDER_STATUSES.includes(
+      order.providerStatus as (typeof QUEUED_PROVIDER_STATUSES)[number]
+    )
+  ) {
+    return order;
+  }
+
+  if (provider === 'datamax') return submitToDatamax(order);
+  return submitToSmartDataHub(order);
 }
 
 function resolveBulkStatus(data: {
@@ -302,9 +381,8 @@ function resolveBulkStatus(data: {
   return orders[0]?.status || 'processing';
 }
 
-export async function syncOrderFromProvider(order: IOrder): Promise<IOrder | null> {
+async function syncFromSmartDataHub(order: IOrder): Promise<IOrder | null> {
   if (!isSmartDataHubConfigured()) return null;
-  if (!(await isFulfillmentRoutingEnabledForNetwork(order.network))) return order;
   if (['delivered', 'failed', 'cancelled', 'refunded'].includes(order.status)) return order;
 
   if (
@@ -341,20 +419,62 @@ export async function syncOrderFromProvider(order: IOrder): Promise<IOrder | nul
   }
 }
 
-export async function retryQueuedFulfillmentOrders(limit = 30): Promise<number> {
-  if (!isSmartDataHubConfigured()) return 0;
+async function syncFromDatamax(order: IOrder): Promise<IOrder | null> {
+  if (!isDatamaxConfigured()) return null;
+  if (['delivered', 'failed', 'cancelled', 'refunded'].includes(order.status)) return order;
 
+  if (
+    !isSubmittedToProvider(order) ||
+    QUEUED_PROVIDER_STATUSES.includes(
+      order.providerStatus as (typeof QUEUED_PROVIDER_STATUSES)[number]
+    )
+  ) {
+    return submitOrderToProvider(order);
+  }
+
+  if (!order.providerOrderId) return submitOrderToProvider(order);
+
+  try {
+    const response = await fetchDatamaxOrderStatus(order.providerOrderId);
+    const rawStatus = response.status || '';
+    if (!rawStatus) return order;
+
+    return applyOrderStatusUpdate(order, {
+      status: mapProviderStatus(rawStatus),
+      providerStatus: rawStatus.toLowerCase().replace(/\s+/g, '_'),
+      stepLabel: 'Gateway Processing',
+      stepMessage: `Delivery status: ${rawStatus}`,
+    });
+  } catch (err) {
+    if (err instanceof DatamaxError && err.statusCode === 404) {
+      return submitOrderToProvider(order);
+    }
+    return order;
+  }
+}
+
+export async function syncOrderFromProvider(order: IOrder): Promise<IOrder | null> {
+  const provider =
+    order.fulfillmentProvider ?? (await resolveFulfillmentProvider(order.network));
+  if (!provider) return order;
+
+  if (provider === 'datamax') return syncFromDatamax(order);
+  return syncFromSmartDataHub(order);
+}
+
+export async function retryQueuedFulfillmentOrders(limit = 30): Promise<number> {
   const queued = await Order.find({
     providerStatus: { $in: [...QUEUED_PROVIDER_STATUSES] },
     status: { $in: ['pending', 'processing'] },
-    $or: [{ providerBatchId: { $exists: false } }, { providerBatchId: null }, { providerBatchId: '' }],
   })
     .sort({ createdAt: 1 })
     .limit(limit);
 
   let retried = 0;
   for (const order of queued) {
-    if (!(await isFulfillmentRoutingEnabledForNetwork(order.network))) continue;
+    const provider =
+      order.fulfillmentProvider ?? (await resolveFulfillmentProvider(order.network));
+    if (!provider || !isFulfillmentProviderConfigured(provider)) continue;
     await submitOrderToProvider(order);
     retried++;
   }
@@ -373,7 +493,7 @@ function scopeFilter(scope: FulfillmentScope = {}): Record<string, unknown> {
   return filter;
 }
 
-/** Pull latest Smart Data Hub statuses into MongoDB before dashboards/lists render. */
+/** Pull latest provider statuses into MongoDB before dashboards/lists render. */
 export async function syncFulfillmentStatuses(scope: FulfillmentScope = {}, limit = 50) {
   await retryQueuedFulfillmentOrders(Math.min(limit, 30));
 
@@ -431,6 +551,7 @@ export async function handleFulfillmentWebhook(body: Record<string, unknown>) {
       body.order_id ||
       body.order_number ||
       body.external_reference ||
+      body.request_id ||
       ''
   );
   const providerRef = String(
@@ -465,7 +586,7 @@ export async function handleFulfillmentWebhook(body: Record<string, unknown>) {
     providerOrderId: String(body.provider_order_id || body.order_id || order.providerOrderId || ''),
     providerBatchId: String(body.batch_id || order.providerBatchId || ''),
     providerReference: String(
-      body.provider_reference || body.order_api_reference || order.providerReference || ''
+      body.provider_reference || body.order_api_reference || body.request_id || order.providerReference || ''
     ),
     stepLabel: 'Gateway Processing',
     stepMessage: `Provider update: ${rawStatus}`,
