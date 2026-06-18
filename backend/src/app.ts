@@ -39,7 +39,11 @@ async function ensureDbReady(): Promise<void> {
       const { seedDatabase } = await import('./services/seedService');
       const { warmEmailTransport } = await import('./utils/email');
       await connectDB();
-      await seedDatabase();
+      try {
+        await seedDatabase();
+      } catch (err) {
+        console.error('Startup seed failed (API will still serve connected requests):', err);
+      }
       void warmEmailTransport();
     })().catch((err) => {
       dbReady = null;
@@ -106,8 +110,18 @@ app.use(generalLimiter);
 
 app.use('/uploads', express.static(path.join(process.cwd(), env.uploadDir)));
 
-app.get('/api/health', (_req, res) => {
-  res.json({ success: true, message: 'topdealsgh API is running' });
+app.get('/api/health', async (_req, res) => {
+  try {
+    const mongoose = await import('mongoose');
+    const dbState = mongoose.connection.readyState;
+    res.json({
+      success: true,
+      message: 'topdealsgh API is running',
+      db: dbState === 1 ? 'connected' : dbState === 2 ? 'connecting' : 'disconnected',
+    });
+  } catch {
+    res.json({ success: true, message: 'topdealsgh API is running' });
+  }
 });
 
 app.use('/api/auth', authRoutes);

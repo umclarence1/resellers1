@@ -14,6 +14,12 @@ import { migrateFulfillmentSettings } from './settingsService';
 import { reconcileLegacyPendingWithdrawals } from './withdrawalService';
 import { migrateOrderNumbers } from './orderMigrationService';
 import { ensureAfaPackage } from './afaPackageService';
+import {
+  backfillPackageProductTypes,
+  dataPackageFilter,
+  ensurePackageIndexes,
+} from './packageMigrationService';
+import { safeStartupStep } from './startupService';
 
 const networks = ['MTN', 'Telecel', 'AirtelTigo'] as const;
 const bundles = ['1GB', '2GB', '3GB', '4GB', '5GB', '6GB', '8GB', '10GB', '15GB', '20GB', '25GB', '30GB', '40GB', '50GB'];
@@ -57,10 +63,12 @@ async function migrateAgentApiSecrets(): Promise<void> {
 }
 
 export const seedDatabase = async (): Promise<void> => {
-  await migrateDealerToAgent();
-  await migrateAgentApiSecrets();
-  await migrateAgentApiApproval();
-  await Package.deleteMany({ network: { $nin: networks } });
+  await safeStartupStep('migrateDealerToAgent', migrateDealerToAgent, { critical: true });
+  await safeStartupStep('migrateAgentApiSecrets', migrateAgentApiSecrets);
+  await safeStartupStep('migrateAgentApiApproval', migrateAgentApiApproval);
+  await safeStartupStep('cleanupPackages', async () => {
+    await Package.deleteMany({ network: { $nin: networks } });
+  });
 
   const networkImageMap: Record<string, string> = {
     MTN: '/images/mtn.jpg',
@@ -68,12 +76,19 @@ export const seedDatabase = async (): Promise<void> => {
     AirtelTigo: '/images/airteltigo.jpg',
   };
 
-  const existingSettings = await Setting.findOne();
-  if (existingSettings) {
+  await safeStartupStep('settingsMigration', async () => {
+    const existingSettings = await Setting.findOne();
+    if (!existingSettings) return;
+
     const migratedFulfillment = migrateFulfillmentSettings(existingSettings.fulfillmentSettings);
     if (migratedFulfillment.dirty) {
       existingSettings.fulfillmentSettings = migratedFulfillment.settings;
       existingSettings.markModified('fulfillmentSettings');
+    }
+
+    if (!existingSettings.afaSettings) {
+      existingSettings.afaSettings = { inStock: true, imageUrl: '/images/afa.jpg' };
+      existingSettings.markModified('afaSettings');
     }
 
     existingSettings.serviceImages = existingSettings.serviceImages
@@ -84,7 +99,10 @@ export const seedDatabase = async (): Promise<void> => {
       }));
     existingSettings.markModified('complaintSettings.networkSettings');
     await existingSettings.save();
-  }
+  });
+
+  await safeStartupStep('backfillPackageProductTypes', backfillPackageProductTypes);
+  await safeStartupStep('ensurePackageIndexes', ensurePackageIndexes);
 
   const adminEmail = env.admin.email.toLowerCase();
   let admin = await User.findOne({ role: 'admin' });
@@ -153,10 +171,10 @@ export const seedDatabase = async (): Promise<void> => {
     console.log(`Demo reseller seeded: ${env.demo.resellerEmail}`);
   }
 
-  await ensureNetworkPackages();
-  await ensureAfaPackage();
-  await reconcileLegacyPendingWithdrawals();
-  await migrateOrderNumbers();
+  await safeStartupStep('ensureNetworkPackages', ensureNetworkPackages);
+  await safeStartupStep('ensureAfaPackage', ensureAfaPackage);
+  await safeStartupStep('reconcileLegacyPendingWithdrawals', reconcileLegacyPendingWithdrawals);
+  await safeStartupStep('migrateOrderNumbers', migrateOrderNumbers);
 
   const faqCount = await Faq.countDocuments();
   if (faqCount === 0) {
@@ -194,9 +212,15 @@ export const ensureNetworkPackages = async () => {
 
   for (const network of networks) {
     for (const bundle of bundles) {
-      const exists = await Package.findOne({ network, bundleSize: bundle, productType: 'data' });
+      const exists = await Package.findOne(dataPackageFilter(network, bundle));
       const base = apiCostFor(network, bundle);
       if (exists) {
+        if (!exists.productType || exists.productType === 'data') {
+          if (exists.productType !== 'data') {
+            exists.productType = 'data';
+            await exists.save();
+          }
+        }
         if (network === 'MTN' && exists.costPrice !== base) {
           exists.costPrice = base;
           await exists.save();
