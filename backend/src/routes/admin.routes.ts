@@ -1024,7 +1024,13 @@ router.post('/settings/fulfillment/check-balance', asyncHandler(async (req, res)
     throw new AppError('Datamax API is not fully configured on the server', 400);
   }
   const result = await checkDatamaxBalance();
-  res.json({ success: true, data: result });
+  res.json({
+    success: true,
+    data: {
+      ...result,
+      balance: result.balance ?? result.wallet_balance,
+    },
+  });
 }));
 
 router.post('/settings/fulfillment/retry-queued', asyncHandler(async (_req, res) => {

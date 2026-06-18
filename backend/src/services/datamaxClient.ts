@@ -101,6 +101,7 @@ export interface DatamaxOrderStatusResponse {
 export interface DatamaxBalanceResponse {
   success: boolean;
   balance?: number;
+  wallet_balance?: number;
   message?: string;
 }
 
@@ -133,8 +134,9 @@ export async function checkDatamaxBalance(): Promise<DatamaxBalanceResponse> {
 
 export async function testDatamaxConnection(): Promise<{ message: string; balance?: number }> {
   const res = await checkDatamaxBalance();
+  const balance = res.balance ?? res.wallet_balance;
   return {
     message: res.message || 'Datamax connection successful',
-    balance: res.balance,
+    balance,
   };
 }
