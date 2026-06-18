@@ -4,7 +4,6 @@ import StoreLayout, { StoreTab } from '@/components/store/StoreLayout';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import { Card } from '@/components/ui/Card';
-import { formatCurrency } from '@/lib/utils';
 import { useNavigate, useParams } from 'react-router-dom';
 import { runValidators, v } from '@/lib/form-validation';
 import { redirectToPaystack } from '@/lib/paystack';
@@ -108,9 +107,6 @@ export default function StoreAfaPage() {
         <Card className="p-0 overflow-hidden">
           <div className="bg-blue-600 px-6 py-4 text-center">
             <h1 className="text-xl font-bold text-white">AFA Registration</h1>
-            {offer && (
-              <p className="text-blue-100 mt-1">Fee: {formatCurrency(offer.price)}</p>
-            )}
           </div>
 
           <form noValidate onSubmit={handlePurchase} className="p-4 sm:p-6 space-y-4">
