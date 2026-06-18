@@ -12,6 +12,10 @@ import {
   mapNetworkToDatamaxCode,
   mapDatamaxVolume,
 } from '../services/datamaxClient.js';
+import {
+  getDatamaxMtnExpressCost,
+  resolveOrderApiCost,
+} from '../config/datamaxPrices.js';
 import { mapProviderStatus } from '../services/fulfillmentProviderService.js';
 import { validateAgentCustomPrice } from '../services/agentPricingService.js';
 import { AppError } from '../middleware/errorHandler.js';
@@ -96,9 +100,59 @@ test('normalizeAfaRoute defaults unknown values to datamax', () => {
 });
 
 test('mapNetworkToDatamaxCode maps Ghana networks', () => {
-  assert.equal(mapNetworkToDatamaxCode('MTN'), 'mtn');
+  assert.equal(mapNetworkToDatamaxCode('MTN'), 'express');
   assert.equal(mapNetworkToDatamaxCode('Telecel'), 'telecel');
   assert.equal(mapNetworkToDatamaxCode('AirtelTigo'), 'airteltigo');
+});
+
+test('getDatamaxMtnExpressCost returns MTN Express dealer prices', () => {
+  assert.equal(getDatamaxMtnExpressCost('1GB'), 3.55);
+  assert.equal(getDatamaxMtnExpressCost('5GB'), 17.78);
+  assert.equal(getDatamaxMtnExpressCost('50GB'), 177.5);
+  assert.equal(getDatamaxMtnExpressCost('99GB'), null);
+});
+
+test('resolveOrderApiCost uses Datamax MTN Express costs when routed to Datamax', () => {
+  assert.equal(
+    resolveOrderApiCost({
+      network: 'MTN',
+      bundleSize: '5GB',
+      costPrice: 3.8,
+      fulfillmentProvider: 'datamax',
+      isAfa: false,
+    }),
+    17.78
+  );
+  assert.equal(
+    resolveOrderApiCost({
+      network: 'MTN',
+      bundleSize: '5GB',
+      costPrice: 3.8,
+      fulfillmentProvider: 'smartdatahub',
+      isAfa: false,
+    }),
+    3.8
+  );
+  assert.equal(
+    resolveOrderApiCost({
+      network: 'Telecel',
+      bundleSize: '5GB',
+      costPrice: 20,
+      fulfillmentProvider: 'datamax',
+      isAfa: false,
+    }),
+    20
+  );
+  assert.equal(
+    resolveOrderApiCost({
+      network: 'MTN',
+      bundleSize: '5GB',
+      costPrice: 15,
+      fulfillmentProvider: 'datamax',
+      isAfa: true,
+    }),
+    15
+  );
 });
 
 test('mapDatamaxVolume parses bundle sizes', () => {

@@ -14,7 +14,7 @@ export class DatamaxError extends Error {
 
 export function mapNetworkToDatamaxCode(network: Network | string): string {
   const map: Record<string, string> = {
-    MTN: 'mtn',
+    MTN: 'express',
     Telecel: 'telecel',
     AirtelTigo: 'airteltigo',
   };

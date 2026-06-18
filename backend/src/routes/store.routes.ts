@@ -151,12 +151,20 @@ router.get('/:slug/afa', asyncHandler(async (req, res) => {
   const customPrice = reseller.resellerStore?.customPrices.get(pkg._id.toString());
   const price = customPrice ?? pkg.resellerBasePrice;
 
+  const settings = await getSettings();
+  const paystackChargePercent = settings.paystackChargePercent ?? 2;
+  const processingFee = roundMoney(price * (paystackChargePercent / 100));
+  const total = roundMoney(price + processingFee);
+
   res.json({
     success: true,
     data: {
       packageId: pkg._id,
       bundleSize: pkg.bundleSize,
       price,
+      processingFee,
+      total,
+      paystackChargePercent,
       basePrice: pkg.resellerBasePrice,
       maxPrice: pkg.maxSellingPrice,
       inStock: stock.inStock,

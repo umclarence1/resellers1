@@ -13,6 +13,7 @@ import { Wallet } from '../models/Wallet';
 import { WalletTransaction } from '../models/WalletTransaction';
 import { AuditLog } from '../models/AuditLog';
 import { Setting } from '../models/Setting';
+import { getDatamaxMtnExpressCost } from '../config/datamaxPrices';
 import { getDateRanges } from '../utils/helpers';
 import { createAgentWithWallet, ensureNetworkPackages } from '../services/seedService';
 import {
@@ -430,6 +431,9 @@ router.get('/packages', asyncHandler(async (_req, res) => {
   const data = packages.map((pkg) => ({
     ...pkg.toObject(),
     ...resellerProfitRange(pkg.resellerBasePrice, pkg.maxSellingPrice),
+    ...(pkg.network === 'MTN'
+      ? { datamaxCostPrice: getDatamaxMtnExpressCost(pkg.bundleSize) }
+      : {}),
   }));
   res.json({ success: true, data });
 }));

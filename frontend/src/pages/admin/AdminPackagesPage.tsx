@@ -25,11 +25,41 @@ type PackageRow = {
   network: string;
   bundleSize: string;
   costPrice: number;
+  datamaxCostPrice?: number | null;
   AgentPrice: number;
   resellerBasePrice: number;
   maxSellingPrice: number;
   isEnabled: boolean;
 };
+
+type FulfillmentSnapshot = {
+  enabled: boolean;
+  defaultProvider: 'smartdatahub' | 'datamax';
+  networkRouting: Record<string, 'default' | 'smartdatahub' | 'datamax' | 'off'>;
+};
+
+function resolveMtnFulfillmentProvider(f: FulfillmentSnapshot | null): 'smartdatahub' | 'datamax' | null {
+  if (!f?.enabled) return null;
+  const route = f.networkRouting.MTN ?? 'default';
+  if (route === 'off') return null;
+  if (route === 'default') return f.defaultProvider;
+  return route;
+}
+
+function effectiveApiCost(
+  pkg: Pick<PackageRow, 'network' | 'costPrice' | 'datamaxCostPrice'>,
+  draftCostPrice: number,
+  fulfillment: FulfillmentSnapshot | null
+): number {
+  if (
+    pkg.network === 'MTN' &&
+    pkg.datamaxCostPrice != null &&
+    resolveMtnFulfillmentProvider(fulfillment) === 'datamax'
+  ) {
+    return pkg.datamaxCostPrice;
+  }
+  return draftCostPrice;
+}
 
 type ApiPackageRow = PackageRow & { agentPrice?: number };
 
@@ -93,6 +123,7 @@ export default function AdminPackagesPage() {
   const [stockToggling, setStockToggling] = useState<string | null>(null);
   const [afaStockToggling, setAfaStockToggling] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [fulfillment, setFulfillment] = useState<FulfillmentSnapshot | null>(null);
 
   useEffect(() => {
     if (!loading && (!user || user.role !== 'admin')) navigate('/login/admin');
@@ -102,16 +133,18 @@ export default function AdminPackagesPage() {
     setPageLoading(true);
     setError('');
     try {
-      const [pkgRes, stockRes, afaRes] = await Promise.all([
+      const [pkgRes, stockRes, afaRes, fulfillmentRes] = await Promise.all([
         api.get('/admin/packages'),
         api.get('/admin/network-stock'),
         api.get('/admin/afa-stock'),
+        api.get('/admin/settings/fulfillment'),
       ]);
       const list = (pkgRes.data.data as ApiPackageRow[]).map(normalizePackage);
       setPackages(list);
       setDrafts(draftsFromPackages(list));
       setNetworkStock(stockRes.data.data as NetworkStockRow[]);
       setAfaStock(afaRes.data.data as { inStock: boolean; imageUrl?: string });
+      setFulfillment(fulfillmentRes.data.data as FulfillmentSnapshot);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load packages');
       setPackages([]);
@@ -335,7 +368,7 @@ export default function AdminPackagesPage() {
                   const changed = draftChanged(p, draft);
                   const isSaving = savingId === p._id;
                   const justSaved = savedId === p._id;
-                  const apiCost = parseFloat(draft.costPrice);
+                  const apiCost = effectiveApiCost(p, parseFloat(draft.costPrice), fulfillment);
                   const base = parseFloat(draft.resellerBasePrice);
                   const Agent = parseFloat(draft.AgentPrice);
                   const maxSell = parseFloat(draft.maxSellingPrice);
@@ -363,6 +396,11 @@ export default function AdminPackagesPage() {
                           onChange={(e) => updateDraft(p._id, 'costPrice', e.target.value)}
                           className="w-28 px-2 py-1.5 rounded-lg border border-gray-300 bg-gray-50 text-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400/50"
                         />
+                        {p.network === 'MTN' && p.datamaxCostPrice != null && (
+                          <span className="block text-[10px] text-gray-400 mt-0.5">
+                            Datamax: {formatCurrency(p.datamaxCostPrice)}
+                          </span>
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         <input

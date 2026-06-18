@@ -13,6 +13,7 @@ import { getAdminBasePrice, computeResellerOrderProfit } from './profitFormulas'
 import { assertNetworkInStock } from './networkStockService';
 import { assertAfaInStock } from './afaStockService';
 import { isAfaProduct, AFA_CHECK_USSD, AFA_PROCESSING_HOURS } from '../config/afa';
+import { resolveOrderApiCost } from '../config/datamaxPrices';
 import { isValidGhanaCard, normalizeGhanaCard } from '../utils/ghanaCard';
 import { resolveFulfillmentProvider, resolveAfaFulfillmentProvider } from './settingsService';
 import { getAgentPrice } from './agentPricingService';
@@ -169,7 +170,13 @@ export const createOrder = async (input: CreateOrderInput) => {
   const fulfillmentProvider = isAfa
     ? await resolveAfaFulfillmentProvider()
     : await resolveFulfillmentProvider(pkg.network);
-  const apiCost = isAfa || fulfillmentProvider === 'datamax' ? pkg.agentPrice : pkg.costPrice;
+  const apiCost = resolveOrderApiCost({
+    network: pkg.network,
+    bundleSize: pkg.bundleSize,
+    costPrice: pkg.costPrice,
+    fulfillmentProvider: fulfillmentProvider ?? null,
+    isAfa,
+  });
   let sellingPrice = input.sellingPrice ?? pkg.agentPrice;
   let profit = 0;
 
