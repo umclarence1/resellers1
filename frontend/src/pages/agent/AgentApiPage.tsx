@@ -7,7 +7,7 @@ import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import Textarea from '@/components/ui/Textarea';
 import { useNavigate } from 'react-router-dom';
-import { Copy, Check, BookOpen, Key, Shield } from 'lucide-react';
+import { Copy, Check, BookOpen, Key, Shield, Clock, XCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 function getAgentApiBaseUrl() {
@@ -98,40 +98,94 @@ function EndpointDoc({
   );
 }
 
+type ApiAccessStatus = {
+  approvalStatus: 'none' | 'pending' | 'approved' | 'rejected';
+  isActive?: boolean;
+  requestedAt?: string;
+  rejectionReason?: string;
+  requestMessage?: string;
+  hasCredentials?: boolean;
+};
+
 export default function AgentApiPage() {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
+  const [apiStatus, setApiStatus] = useState<ApiAccessStatus | null>(null);
   const [creds, setCreds] = useState<Record<string, unknown>>({});
   const [logs, setLogs] = useState<Array<Record<string, unknown>>>([]);
   const [stats, setStats] = useState<Array<Record<string, unknown>>>([]);
   const [webhookUrl, setWebhookUrl] = useState('');
   const [ipWhitelist, setIpWhitelist] = useState('');
+  const [requestMessage, setRequestMessage] = useState('');
   const [settingsMsg, setSettingsMsg] = useState('');
   const [settingsError, setSettingsError] = useState('');
+  const [requestError, setRequestError] = useState('');
   const [savingSettings, setSavingSettings] = useState(false);
+  const [submittingRequest, setSubmittingRequest] = useState(false);
 
   const apiBase = getAgentApiBaseUrl();
+  const isApproved = apiStatus?.approvalStatus === 'approved';
 
   useEffect(() => {
     if (!loading && (!user || user.role !== 'agent')) navigate('/login/agent');
   }, [user, loading, navigate]);
 
+  const loadStatus = useCallback(() => {
+    api.get('/agent/api/status').then((res) => setApiStatus(res.data.data)).catch(console.error);
+  }, []);
+
   const loadCreds = useCallback(() => {
-    api.get('/agent/api/credentials').then((res) => {
-      const data = res.data.data;
-      setCreds(data);
-      setWebhookUrl((data.webhookUrl as string) || '');
-      setIpWhitelist(Array.isArray(data.ipWhitelist) ? (data.ipWhitelist as string[]).join('\n') : '');
-    });
+    api
+      .get('/agent/api/credentials')
+      .then((res) => {
+        const data = res.data.data;
+        setCreds(data);
+        setApiStatus((prev) => ({
+          approvalStatus: data.approvalStatus ?? prev?.approvalStatus ?? 'approved',
+          isActive: data.isActive,
+          requestedAt: data.requestedAt,
+          rejectionReason: data.rejectionReason,
+          requestMessage: data.requestMessage,
+          hasCredentials: data.hasCredentials,
+        }));
+        setWebhookUrl((data.webhookUrl as string) || '');
+        setIpWhitelist(Array.isArray(data.ipWhitelist) ? (data.ipWhitelist as string[]).join('\n') : '');
+      })
+      .catch((err) => {
+        if (err instanceof Error && err.message.includes('not approved')) return;
+        console.error(err);
+      });
   }, []);
 
   useEffect(() => {
     if (user?.role === 'agent') {
+      loadStatus();
+    }
+  }, [user, loadStatus]);
+
+  useEffect(() => {
+    if (user?.role === 'agent' && isApproved) {
       loadCreds();
       api.get('/agent/api/logs').then((res) => setLogs(res.data.data)).catch(console.error);
       api.get('/agent/api/stats').then((res) => setStats(res.data.data)).catch(console.error);
     }
-  }, [user, loadCreds]);
+  }, [user, isApproved, loadCreds]);
+
+  const submitRequest = async () => {
+    setSubmittingRequest(true);
+    setRequestError('');
+    setSettingsMsg('');
+    try {
+      await api.post('/agent/api/request', { message: requestMessage.trim() || undefined });
+      setSettingsMsg('Request submitted. An admin will review it shortly.');
+      setRequestMessage('');
+      loadStatus();
+    } catch (err) {
+      setRequestError(err instanceof Error ? err.message : 'Failed to submit request');
+    } finally {
+      setSubmittingRequest(false);
+    }
+  };
 
   const regenerate = async () => {
     if (!confirm('Regenerating keys will invalidate your current API credentials. Continue?')) return;
@@ -165,6 +219,66 @@ export default function AgentApiPage() {
   -d '{"packageId":"PACKAGE_ID","recipientPhone":"0241234567"}'`;
 
   if (loading || !user) return null;
+
+  if (!isApproved) {
+    const status = apiStatus?.approvalStatus ?? 'none';
+    return (
+      <DashboardLayout role="agent">
+        <div className="mb-8">
+          <h1 className="text-xl sm:text-2xl font-bold text-white mb-1">Developer API</h1>
+          <p className="text-sm text-gray-400">
+            Request access to integrate automated data purchases into your application.
+          </p>
+        </div>
+
+        <Card className="max-w-xl">
+          <CardBody className="space-y-4">
+            {status === 'none' || status === 'rejected' ? (
+              <>
+                {status === 'rejected' && (
+                  <div className="flex gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+                    <XCircle className="w-5 h-5 shrink-0" />
+                    <div>
+                      <p className="font-medium">Previous request declined</p>
+                      <p className="mt-1">{apiStatus?.rejectionReason || 'Contact admin for details.'}</p>
+                    </div>
+                  </div>
+                )}
+                <p className="text-sm text-gray-600">
+                  Submit a request and an admin will approve your API access before keys are issued.
+                </p>
+                <Textarea
+                  label="Message to admin (optional)"
+                  value={requestMessage}
+                  onChange={(e) => setRequestMessage(e.target.value)}
+                  placeholder="Briefly describe how you plan to use the API..."
+                  rows={3}
+                />
+                {requestError && <p className="text-sm text-red-600">{requestError}</p>}
+                {settingsMsg && <p className="text-sm text-emerald-700">{settingsMsg}</p>}
+                <Button onClick={submitRequest} loading={submittingRequest} disabled={submittingRequest}>
+                  Request API access
+                </Button>
+              </>
+            ) : (
+              <div className="flex gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                <Clock className="w-5 h-5 shrink-0" />
+                <div>
+                  <p className="font-medium">Request pending approval</p>
+                  <p className="mt-1">
+                    Your API access request is waiting for admin review. You will be notified once approved.
+                  </p>
+                  {apiStatus?.requestMessage && (
+                    <p className="mt-2 text-amber-800">Your note: {apiStatus.requestMessage}</p>
+                  )}
+                </div>
+              </div>
+            )}
+          </CardBody>
+        </Card>
+      </DashboardLayout>
+    );
+  }
 
   return (
     <DashboardLayout role="agent">
@@ -201,6 +315,11 @@ export default function AgentApiPage() {
             <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg p-3">
               Never share your secret key publicly or commit it to source control.
             </p>
+            {typeof creds.secretKey === 'string' && !String(creds.secretKey).startsWith('•') && (
+              <p className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-lg p-3">
+                Save your secret key now — it will not be shown again. Use Regenerate keys if you lose it.
+              </p>
+            )}
             <Button size="sm" variant="outline" onClick={regenerate}>Regenerate keys</Button>
           </CardBody>
         </Card>

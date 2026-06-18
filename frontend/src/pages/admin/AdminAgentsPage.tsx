@@ -16,7 +16,7 @@ import AdminAgentCustomPricesModal from '@/components/admin/AdminAgentCustomPric
 import AdminPasswordConfirm from '@/components/admin/AdminPasswordConfirm';
 import ActionChip from '@/components/admin/ActionChip';
 import { formatCurrency } from '@/lib/utils';
-import { Gift, Loader2, Trash2, UserCheck, UserX, Wallet, Tags } from 'lucide-react';
+import { Gift, Loader2, Trash2, UserCheck, UserX, Wallet, Tags, Key, Check, X } from 'lucide-react';
 
 type AgentRow = {
   _id: string;
@@ -25,6 +25,10 @@ type AgentRow = {
   phone: string;
   status: string;
   walletBalance?: number;
+  apiAccess?: {
+    approvalStatus: 'none' | 'pending' | 'approved' | 'rejected';
+    requestMessage?: string;
+  };
 };
 
 export default function AdminAgentsPage() {
@@ -41,6 +45,7 @@ export default function AdminAgentsPage() {
   const [rewardTarget, setRewardTarget] = useState<{ id: string; fullName: string } | null>(null);
   const [topUpTarget, setTopUpTarget] = useState<{ id: string; fullName: string; balance: number } | null>(null);
   const [pricesTarget, setPricesTarget] = useState<{ id: string; fullName: string } | null>(null);
+  const [apiActionId, setApiActionId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!loading && (!user || user.role !== 'admin')) navigate('/login/admin');
@@ -114,6 +119,35 @@ export default function AdminAgentsPage() {
     }
   };
 
+  const approveApiAccess = async (agent: AgentRow) => {
+    setApiActionId(agent._id);
+    setError('');
+    try {
+      await api.post(`/admin/agents/${agent._id}/api/approve`);
+      loadAgents();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to approve API access');
+    } finally {
+      setApiActionId(null);
+    }
+  };
+
+  const rejectApiAccess = async (agent: AgentRow) => {
+    const reason = window.prompt(`Decline API request for ${agent.fullName}? Optional reason:`) ?? '';
+    if (reason === null) return;
+
+    setApiActionId(agent._id);
+    setError('');
+    try {
+      await api.post(`/admin/agents/${agent._id}/api/reject`, { reason: reason.trim() || undefined });
+      loadAgents();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to decline API request');
+    } finally {
+      setApiActionId(null);
+    }
+  };
+
   const deleteAgent = async (Agent: AgentRow) => {
     const confirmed = window.confirm(
       `Delete ${Agent.fullName} permanently?\n\nTheir wallet must be empty. Order history will remain.`
@@ -179,14 +213,16 @@ export default function AdminAgentsPage() {
                 <th className="text-left px-4 py-3 font-medium text-gray-500">Email</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-500">Phone</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-500">Wallet</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-500">API</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-500">Status</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-500">Actions</th>
               </tr>
             </thead>
             <tbody>
               {agents.map((d) => {
-                const busy = updatingId === d._id;
+                const busy = updatingId === d._id || apiActionId === d._id;
                 const isActive = d.status === 'active';
+                const apiStatus = d.apiAccess?.approvalStatus ?? 'none';
                 return (
                   <tr key={d._id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50/50">
                     <td className="px-4 py-3 text-gray-900 font-medium">{d.fullName}</td>
@@ -194,6 +230,21 @@ export default function AdminAgentsPage() {
                     <td className="px-4 py-3 text-gray-700">{d.phone}</td>
                     <td className="px-4 py-3 text-gray-900 font-semibold tabular-nums">
                       {formatCurrency(d.walletBalance ?? 0)}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-semibold capitalize ${
+                          apiStatus === 'approved'
+                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                            : apiStatus === 'pending'
+                              ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                              : apiStatus === 'rejected'
+                                ? 'bg-rose-50 text-rose-600 border border-rose-200'
+                                : 'bg-gray-50 text-gray-600 border border-gray-200'
+                        }`}
+                      >
+                        {apiStatus === 'none' ? 'not requested' : apiStatus}
+                      </span>
                     </td>
                     <td className="px-4 py-3">
                       <span
@@ -206,6 +257,35 @@ export default function AdminAgentsPage() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap items-center gap-1.5">
+                        {apiStatus === 'pending' && (
+                          <>
+                            <ActionChip
+                              title="Approve API access"
+                              active
+                              activeTone="emerald"
+                              disabled={busy}
+                              onClick={() => approveApiAccess(d)}
+                            >
+                              {apiActionId === d._id ? (
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                              ) : (
+                                <Check className="w-3 h-3" />
+                              )}
+                              Approve API
+                            </ActionChip>
+                            <ActionChip
+                              title="Decline API request"
+                              active={false}
+                              inactiveTone="rose"
+                              disabled={busy}
+                              onClick={() => rejectApiAccess(d)}
+                            >
+                              <X className="w-3 h-3" />
+                              Decline
+                            </ActionChip>
+                          </>
+                        )}
+
                         <ActionChip
                           title="Custom prices"
                           active

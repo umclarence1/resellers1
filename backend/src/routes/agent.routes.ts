@@ -28,6 +28,11 @@ import {
 } from '../services/fulfillmentProviderService';
 import { purchaseLimiter, walletFundLimiter } from '../middleware/rateLimiter';
 import { rejectFields } from '../middleware/rejectFields';
+import {
+  isAgentApiApproved,
+  requestAgentApiAccess,
+  serializeAgentApiStatus,
+} from '../services/agentApiApprovalService';
 import { buildOrderSearchFilter } from '../services/adminSearchService';
 
 const blockClientPricing = rejectFields(
@@ -248,27 +253,58 @@ router.get('/orders/:orderId', asyncHandler(async (req: AuthRequest, res) => {
   res.json({ success: true, data: order });
 }));
 
-// API credentials
+// Developer API — request / approval flow
+router.get('/api/status', asyncHandler(async (req: AuthRequest, res) => {
+  const agent = await User.findById(req.user!._id);
+  if (!agent) throw new AppError('Agent not found', 404);
+  res.json({ success: true, data: serializeAgentApiStatus(agent) });
+}));
+
+router.post('/api/request', asyncHandler(async (req: AuthRequest, res) => {
+  const { message } = req.body;
+  const data = await requestAgentApiAccess(req.user!._id.toString(), message);
+  res.status(201).json({
+    success: true,
+    message: 'API access request submitted. An admin will review it shortly.',
+    data,
+  });
+}));
+
 router.get('/api/credentials', asyncHandler(async (req: AuthRequest, res) => {
-  const dealer = await User.findById(req.user!._id);
+  const dealer = await User.findById(req.user!._id).select('+agentApi.secretKey');
+  if (!dealer) throw new AppError('Agent not found', 404);
+  if (!isAgentApiApproved(dealer)) {
+    throw new AppError('API access not approved yet', 403);
+  }
+
+  let oneTimeSecret: string | undefined;
+  if (dealer.agentApi?.secretKey) {
+    oneTimeSecret = dealer.agentApi.secretKey;
+    dealer.agentApi.secretKey = undefined;
+    dealer.markModified('agentApi');
+    await dealer.save();
+  }
+
   res.json({
     success: true,
     data: {
-      apiKey: dealer?.agentApi?.apiKey,
-      secretKey: dealer?.agentApi?.secretKeyHash ? '••••••••••••••••' : undefined,
-      isActive: dealer?.agentApi?.isActive,
-      ipWhitelist: dealer?.agentApi?.ipWhitelist,
-      webhookUrl: dealer?.agentApi?.webhookUrl,
+      ...serializeAgentApiStatus(dealer),
+      apiKey: dealer.agentApi?.apiKey,
+      secretKey: oneTimeSecret ?? (dealer.agentApi?.secretKeyHash ? '••••••••••••••••' : undefined),
+      ipWhitelist: dealer.agentApi?.ipWhitelist,
+      webhookUrl: dealer.agentApi?.webhookUrl,
     },
   });
 }));
 
 router.put('/api/settings', asyncHandler(async (req: AuthRequest, res) => {
   const dealer = await User.findById(req.user!._id);
-  if (!dealer?.agentApi) throw new AppError('API not configured');
+  if (!dealer || !isAgentApiApproved(dealer)) {
+    throw new AppError('API access not approved', 403);
+  }
 
-  if (req.body.ipWhitelist) dealer.agentApi.ipWhitelist = req.body.ipWhitelist;
-  if (req.body.webhookUrl !== undefined) dealer.agentApi.webhookUrl = req.body.webhookUrl;
+  if (req.body.ipWhitelist) dealer.agentApi!.ipWhitelist = req.body.ipWhitelist;
+  if (req.body.webhookUrl !== undefined) dealer.agentApi!.webhookUrl = req.body.webhookUrl;
   await dealer.save();
 
   res.json({ success: true, data: dealer.agentApi });
@@ -276,27 +312,37 @@ router.put('/api/settings', asyncHandler(async (req: AuthRequest, res) => {
 
 router.post('/api/regenerate', asyncHandler(async (req: AuthRequest, res) => {
   const dealer = await User.findById(req.user!._id);
-  if (!dealer?.agentApi) throw new AppError('API not configured');
+  if (!dealer || !isAgentApiApproved(dealer)) {
+    throw new AppError('API access not approved', 403);
+  }
 
   const { generateApiKey } = await import('../utils/helpers');
   const { rotateAgentApiSecret } = await import('../services/agentSecretService');
-  dealer.agentApi.apiKey = generateApiKey();
+  dealer.agentApi!.apiKey = generateApiKey();
   const plaintextSecret = await rotateAgentApiSecret(dealer);
 
   res.json({
     success: true,
     message: 'Store this secret now — it will not be shown again.',
-    data: { apiKey: dealer.agentApi.apiKey, secretKey: plaintextSecret },
+    data: { apiKey: dealer.agentApi!.apiKey, secretKey: plaintextSecret },
   });
 }));
 
-// API logs & stats
+// API logs & stats (approved agents only)
 router.get('/api/logs', asyncHandler(async (req: AuthRequest, res) => {
+  const agent = await User.findById(req.user!._id);
+  if (!agent || !isAgentApiApproved(agent)) {
+    throw new AppError('API access not approved', 403);
+  }
   const logs = await ApiLog.find({ agentId: req.user!._id }).sort({ createdAt: -1 }).limit(100);
   res.json({ success: true, data: logs });
 }));
 
 router.get('/api/stats', asyncHandler(async (req: AuthRequest, res) => {
+  const agent = await User.findById(req.user!._id);
+  if (!agent || !isAgentApiApproved(agent)) {
+    throw new AppError('API access not approved', 403);
+  }
   const stats = await ApiLog.aggregate([
     { $match: { agentId: req.user!._id } },
     {

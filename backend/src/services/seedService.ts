@@ -6,9 +6,10 @@ import { Faq } from '../models/Faq';
 import { Setting } from '../models/Setting';
 import { Wallet } from '../models/Wallet';
 import { env } from '../config/env';
-import { generateApiKey, generateReferralCode, generateSecretKey } from '../utils/helpers';
-import { setInitialAgentApiSecret, migrateAgentSecretIfNeeded } from './agentSecretService';
+import { generateReferralCode } from '../utils/helpers';
+import { migrateAgentSecretIfNeeded } from './agentSecretService';
 import { migrateDealerToAgent } from './agentRoleMigrationService';
+import { migrateAgentApiApproval, provisionApprovedAgentApi } from './agentApiApprovalService';
 import { reconcileLegacyPendingWithdrawals } from './withdrawalService';
 import { migrateOrderNumbers } from './orderMigrationService';
 
@@ -56,6 +57,7 @@ async function migrateAgentApiSecrets(): Promise<void> {
 export const seedDatabase = async (): Promise<void> => {
   await migrateDealerToAgent();
   await migrateAgentApiSecrets();
+  await migrateAgentApiApproval();
   await Package.deleteMany({ network: { $nin: networks } });
 
   const networkImageMap: Record<string, string> = {
@@ -114,12 +116,13 @@ export const seedDatabase = async (): Promise<void> => {
   const demoAgentEmail = env.demo.agentEmail.toLowerCase();
   const existingDemoAgent = await User.findOne({ email: demoAgentEmail });
   if (!existingDemoAgent) {
-    await createAgentWithWallet({
+    const demoAgent = await createAgentWithWallet({
       fullName: 'Demo Agent',
       email: demoAgentEmail,
       phone: '0240000001',
       password: env.demo.agentPassword,
     });
+    await provisionApprovedAgentApi(demoAgent);
     console.log(`Demo agent seeded: ${demoAgentEmail}`);
   } else if (existingDemoAgent.role !== 'agent') {
     existingDemoAgent.role = 'agent';
@@ -214,24 +217,14 @@ export const createAgentWithWallet = async (data: {
   password: string;
 }) => {
   const hashedPassword = await bcrypt.hash(data.password, 12);
-  const plaintextSecret = generateSecretKey();
-  const agentApi = {
-    apiKey: generateApiKey(),
-    ipWhitelist: [] as string[],
-    isActive: true,
-  };
-  await setInitialAgentApiSecret(agentApi, plaintextSecret);
 
   const agent = await User.create({
     ...data,
     password: hashedPassword,
     role: 'agent',
     status: 'active',
-    agentApi,
   });
   await Wallet.create({ userId: agent._id });
-  (agent as InstanceType<typeof User> & { _plaintextApiSecret?: string })._plaintextApiSecret =
-    plaintextSecret;
   return agent;
 };
 

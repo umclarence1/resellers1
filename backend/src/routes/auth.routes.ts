@@ -64,7 +64,10 @@ const issueAuthSession = async (user: InstanceType<typeof User>) => {
     status: user.status,
     resellerStore: user.resellerStore,
     agentApi: user.agentApi
-      ? { apiKey: user.agentApi.apiKey, isActive: user.agentApi.isActive }
+      ? {
+          approvalStatus: user.agentApi.approvalStatus ?? 'none',
+          isActive: user.agentApi.isActive,
+        }
       : undefined,
   });
   return { token, refreshToken, user: profile };
@@ -527,7 +530,10 @@ router.get(
       status: user.status,
       resellerStore: user.resellerStore,
       agentApi: user.agentApi
-        ? { apiKey: user.agentApi.apiKey, isActive: user.agentApi.isActive }
+        ? {
+            approvalStatus: user.agentApi.approvalStatus ?? 'none',
+            isActive: user.agentApi.isActive,
+          }
         : undefined,
     });
     res.json({ success: true, data: profile });

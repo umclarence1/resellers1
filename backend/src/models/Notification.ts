@@ -9,6 +9,9 @@ export type NotificationType =
   | 'withdrawal_paid'
   | 'withdrawal_rejected'
   | 'referral_registered'
+  | 'agent_api_request'
+  | 'agent_api_approved'
+  | 'agent_api_rejected'
   | 'system';
 
 export interface INotification extends Document {
@@ -35,6 +38,9 @@ const notificationSchema = new Schema<INotification>(
         'withdrawal_paid',
         'withdrawal_rejected',
         'referral_registered',
+        'agent_api_request',
+        'agent_api_approved',
+        'agent_api_rejected',
         'system',
       ],
       required: true,

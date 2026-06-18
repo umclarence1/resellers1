@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 import { Order } from '../models/Order';
-import { User, UserRole } from '../models/User';
+import { User, UserRole, AgentApiApprovalStatus } from '../models/User';
 import { getDateRanges } from '../utils/helpers';
 
 function rankLabel(rank: number): string {
@@ -119,7 +119,10 @@ export async function buildAuthUserProfile(user: {
   role: UserRole;
   status: string;
   resellerStore?: unknown;
-  agentApi?: { apiKey: string; isActive: boolean };
+  agentApi?: {
+    approvalStatus?: AgentApiApprovalStatus;
+    isActive: boolean;
+  };
 }) {
   const performance =
     user.role === 'agent' || user.role === 'reseller'

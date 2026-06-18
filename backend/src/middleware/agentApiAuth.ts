@@ -34,12 +34,13 @@ export const agentApiAuth = async (
     role: 'agent',
     'agentApi.apiKey': apiKey,
     'agentApi.isActive': true,
+    'agentApi.approvalStatus': 'approved',
     status: 'active',
   })
     .select('+agentApi.secretKey +agentApi.secretKeyHash')
     .exec();
 
-  if (!agent?.agentApi) {
+  if (!agent?.agentApi?.apiKey) {
     throw new AppError('Invalid API credentials', 401);
   }
 

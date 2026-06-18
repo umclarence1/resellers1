@@ -2,6 +2,7 @@ import mongoose, { Document, Schema } from 'mongoose';
 
 export type UserRole = 'admin' | 'agent' | 'reseller';
 export type UserStatus = 'active' | 'suspended' | 'pending';
+export type AgentApiApprovalStatus = 'none' | 'pending' | 'approved' | 'rejected';
 
 export interface IResellerStore {
   storeName: string;
@@ -17,13 +18,18 @@ export interface IResellerStore {
 }
 
 export interface IAgentApi {
-  apiKey: string;
+  apiKey?: string;
   /** @deprecated Plaintext secrets are migrated to secretKeyHash — never returned via API */
   secretKey?: string;
   secretKeyHash?: string;
   ipWhitelist: string[];
   webhookUrl?: string;
   isActive: boolean;
+  approvalStatus?: AgentApiApprovalStatus;
+  requestMessage?: string;
+  requestedAt?: Date;
+  reviewedAt?: Date;
+  rejectionReason?: string;
   customPrices?: Map<string, number>;
 }
 
@@ -66,12 +72,21 @@ const resellerStoreSchema = new Schema<IResellerStore>(
 
 const agentApiSchema = new Schema<IAgentApi>(
   {
-    apiKey: { type: String, required: true },
+    apiKey: String,
     secretKey: { type: String, select: false },
     secretKeyHash: { type: String, select: false },
     ipWhitelist: { type: [String], default: [] },
     webhookUrl: String,
-    isActive: { type: Boolean, default: true },
+    isActive: { type: Boolean, default: false },
+    approvalStatus: {
+      type: String,
+      enum: ['none', 'pending', 'approved', 'rejected'],
+      default: 'none',
+    },
+    requestMessage: String,
+    requestedAt: Date,
+    reviewedAt: Date,
+    rejectionReason: String,
     customPrices: { type: Map, of: Number, default: {} },
   },
   { _id: false }
@@ -103,5 +118,6 @@ userSchema.index({ 'resellerStore.slug': 1 }, { unique: true, sparse: true });
 userSchema.index({ 'resellerStore.referralCode': 1 }, { unique: true, sparse: true });
 userSchema.index({ role: 1, status: 1 });
 userSchema.index({ role: 1, 'resellerStore.isActive': 1 });
+userSchema.index({ role: 1, 'agentApi.approvalStatus': 1 });
 
 export const User = mongoose.model<IUser>('User', userSchema);

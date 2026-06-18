@@ -51,6 +51,11 @@ import {
   setAgentCustomPrice,
   clearAgentCustomPrices,
 } from '../services/agentPricingService';
+import {
+  approveAgentApiAccess,
+  rejectAgentApiAccess,
+  serializeAgentApiStatus,
+} from '../services/agentApiApprovalService';
 import { adminSearch, buildOrderSearchFilter } from '../services/adminSearchService';
 import { creditWallet } from '../services/walletService';
 import { getResellerPoolSummary, resellerProfitRange } from '../services/resellerProfitService';
@@ -106,6 +111,7 @@ router.get('/agents', asyncHandler(async (_req, res) => {
   const data = dealers.map((d) => ({
     ...d.toObject(),
     walletBalance: balanceByUser.get(d._id.toString()) ?? 0,
+    apiAccess: serializeAgentApiStatus(d),
   }));
   res.json({ success: true, data });
 }));
@@ -337,6 +343,45 @@ router.delete('/agents/:id/prices', asyncHandler(async (req: AuthRequest, res) =
   const cleared = await clearAgentCustomPrices(agentId);
   await logAudit(req, 'delete', 'agent_custom_prices', agentId, { cleared });
   res.json({ success: true, data: { cleared } });
+}));
+
+router.get('/agents/api-requests', asyncHandler(async (_req, res) => {
+  const agents = await User.find({
+    role: 'agent',
+    'agentApi.approvalStatus': 'pending',
+  })
+    .select('-password')
+    .sort({ 'agentApi.requestedAt': 1 });
+
+  res.json({
+    success: true,
+    data: agents.map((agent) => ({
+      _id: agent._id,
+      fullName: agent.fullName,
+      email: agent.email,
+      phone: agent.phone,
+      apiAccess: serializeAgentApiStatus(agent),
+    })),
+  });
+}));
+
+router.post('/agents/:id/api/approve', asyncHandler(async (req: AuthRequest, res) => {
+  const agentId = String(req.params.id);
+  const credentials = await approveAgentApiAccess(agentId);
+  await logAudit(req, 'approve', 'agent_api', agentId);
+  res.json({
+    success: true,
+    message: 'Agent API access approved. The agent can view credentials on their Developer API page.',
+    data: { apiKey: credentials.apiKey },
+  });
+}));
+
+router.post('/agents/:id/api/reject', asyncHandler(async (req: AuthRequest, res) => {
+  const agentId = String(req.params.id);
+  const { reason } = req.body;
+  await rejectAgentApiAccess(agentId, reason);
+  await logAudit(req, 'reject', 'agent_api', agentId, { reason });
+  res.json({ success: true, message: 'Agent API request declined' });
 }));
 
 // Package management
