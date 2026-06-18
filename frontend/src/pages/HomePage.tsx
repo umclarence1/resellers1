@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { CheckCircle2, Smartphone } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import { FeatureCard, ServiceCard } from '@/components/ui/ModernCard';
@@ -10,8 +11,29 @@ import ContactHelpButton from '@/components/ui/ContactHelpButton';
 import ResultsCheckerPromo from '@/components/ui/ResultsCheckerPromo';
 import WhatsAppFloat from '@/components/ui/WhatsAppFloat';
 import { ADMIN_SUPPORT_DISPLAY, ADMIN_SUPPORT_PHONE } from '@/lib/support-contact';
+import { api } from '@/lib/api';
+
+const NETWORKS = ['MTN', 'Telecel', 'AirtelTigo'] as const;
+
+type PlatformServices = {
+  networks: Array<{ network: string; inStock: boolean }>;
+  afa: { inStock: boolean; imageUrl?: string };
+  checker: { inStock: boolean; imageUrl?: string };
+};
 
 export default function HomePage() {
+  const [services, setServices] = useState<PlatformServices | null>(null);
+
+  useEffect(() => {
+    api
+      .get('/public/services')
+      .then((res) => setServices(res.data.data as PlatformServices))
+      .catch(() => setServices(null));
+  }, []);
+
+  const networkInStock = (network: string) =>
+    services?.networks.find((n) => n.network === network)?.inStock ?? true;
+
   return (
     <div className="min-h-screen bg-navy">
       <SiteNavbar />
@@ -20,7 +42,6 @@ export default function HomePage() {
       <section className="relative overflow-hidden">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-16 lg:py-24">
           <div className="grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
-            {/* Left — Text */}
             <div className="relative z-10">
               <h1 className="text-4xl sm:text-5xl lg:text-[3.25rem] font-bold text-white leading-tight mb-6">
                 Fastest and safest way to sell data bundles in Ghana
@@ -34,7 +55,7 @@ export default function HomePage() {
                   'Instant data delivery within minutes',
                   'Secure wallet and payment system',
                   'Your own branded reseller store',
-                  'Competitive pricing across all networks',
+                  'MTN AFA registration & results checkers',
                 ].map((item) => (
                   <li key={item} className="flex items-center gap-3 text-gray-300">
                     <CheckCircle2 className="w-5 h-5 text-gold shrink-0" />
@@ -67,7 +88,6 @@ export default function HomePage() {
               </div>
             </div>
 
-            {/* Right — Phone mockup */}
             <div className="relative flex justify-center lg:justify-end">
               <div className="relative w-[280px] sm:w-[300px]">
                 <div className="bg-navy-light border-4 border-navy-border rounded-[2.5rem] p-3 shadow-2xl shadow-black/40">
@@ -76,7 +96,7 @@ export default function HomePage() {
                       <BrandMark size="sm" showText />
                     </div>
                     <div className="p-4 space-y-2">
-                      {['MTN Data Bundles', 'Telecel Packages', 'AirtelTigo Plans', 'Wallet & Earnings', 'My Store'].map((item) => (
+                      {['MTN Data Bundles', 'Telecel Packages', 'AirtelTigo Plans', 'AFA & Checkers', 'My Store'].map((item) => (
                         <div key={item} className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-gray-50 text-sm text-gray-700">
                           <Smartphone className="w-4 h-4 text-gold" />
                           {item}
@@ -101,7 +121,7 @@ export default function HomePage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 flex flex-col sm:flex-row items-center gap-6">
           <span className="text-gray-500 text-sm font-medium whitespace-nowrap">Supported Networks:</span>
           <div className="flex flex-wrap items-center gap-8">
-            {['MTN', 'Telecel', 'AirtelTigo'].map((name) => (
+            {NETWORKS.map((name) => (
               <span key={name} className="text-white/80 font-semibold text-lg tracking-wide">{name}</span>
             ))}
           </div>
@@ -130,16 +150,34 @@ export default function HomePage() {
       <section id="services" className="py-20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
           <h2 className="text-2xl sm:text-3xl font-bold text-center text-white mb-4">Our Services</h2>
-          <p className="text-center text-gray-400 mb-12">All major Ghana networks supported</p>
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5 lg:gap-6">
-            {['MTN', 'Telecel', 'AirtelTigo'].map((network) => (
-              <ServiceCard
-                key={network}
-                name={network}
-                imageUrl={getNetworkImage(network)}
-                badge="Available"
-              />
-            ))}
+          <p className="text-center text-gray-400 mb-12">
+            Data bundles, MTN AFA registration, and BECE/WASSCE results checkers
+          </p>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5 lg:gap-6 max-w-5xl mx-auto">
+            {NETWORKS.map((network) => {
+              const available = networkInStock(network);
+              return (
+                <ServiceCard
+                  key={network}
+                  name={network}
+                  imageUrl={getNetworkImage(network)}
+                  badge={available ? 'Available' : 'Unavailable'}
+                  badgeVariant={available ? 'available' : 'unavailable'}
+                />
+              );
+            })}
+            <ServiceCard
+              name="MTN AFA Registration"
+              imageUrl={services?.afa.imageUrl || '/images/afa.jpg'}
+              badge={services?.afa.inStock !== false ? 'Available' : 'Unavailable'}
+              badgeVariant={services?.afa.inStock !== false ? 'available' : 'unavailable'}
+            />
+            <ServiceCard
+              name="Results Checker"
+              imageUrl={services?.checker.imageUrl || '/images/waec-checker.png'}
+              badge={services?.checker.inStock ? 'Available' : 'Unavailable'}
+              badgeVariant={services?.checker.inStock ? 'available' : 'unavailable'}
+            />
           </div>
         </div>
       </section>

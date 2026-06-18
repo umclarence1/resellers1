@@ -25,6 +25,7 @@ import webhookRoutes, {
   fulfillmentWebhookMiddleware,
 } from './routes/webhook.routes';
 import supportRoutes from './routes/support.routes';
+import publicRoutes from './routes/public.routes';
 
 validateProductionEnv();
 
@@ -124,6 +125,7 @@ app.get('/api/health', async (_req, res) => {
   }
 });
 
+app.use('/api/public', publicRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/agent', agentRoutes);
