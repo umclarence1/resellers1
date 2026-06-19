@@ -43,6 +43,9 @@ const ResellerOrdersPage = lazy(() => import('@/pages/reseller/ResellerOrdersPag
 const ResellerComplaintsPage = lazy(() => import('@/pages/reseller/ResellerComplaintsPage'));
 const ResellerSubResellersPage = lazy(() => import('@/pages/reseller/ResellerSubResellersPage'));
 const ResellerSubResellerPricesPage = lazy(() => import('@/pages/reseller/ResellerSubResellerPricesPage'));
+const ResellerDefaultSubResellerPricesPage = lazy(() =>
+  import('@/pages/reseller/ResellerDefaultSubResellerPricesPage')
+);
 
 const StoreCheckerPage = lazy(() => import('@/pages/store/StoreCheckerPage'));
 const StoreCheckerSuccessPage = lazy(() => import('@/pages/store/StoreCheckerSuccessPage'));
@@ -114,6 +117,7 @@ export default function App() {
         <Route path="/reseller/orders" element={<Lazy><ProtectedRoute role="reseller"><ResellerOrdersPage /></ProtectedRoute></Lazy>} />
         <Route path="/reseller/complaints" element={<Lazy><ProtectedRoute role="reseller"><ResellerComplaintsPage /></ProtectedRoute></Lazy>} />
         <Route path="/reseller/sub-resellers" element={<Lazy><ProtectedRoute role="reseller"><ResellerSubResellersPage /></ProtectedRoute></Lazy>} />
+        <Route path="/reseller/sub-resellers/default-prices" element={<Lazy><ProtectedRoute role="reseller"><ResellerDefaultSubResellerPricesPage /></ProtectedRoute></Lazy>} />
         <Route path="/reseller/sub-resellers/:childId/prices" element={<Lazy><ProtectedRoute role="reseller"><ResellerSubResellerPricesPage /></ProtectedRoute></Lazy>} />
 
         <Route path="/store/:slug" element={<Lazy><StoreHomePage /></Lazy>} />

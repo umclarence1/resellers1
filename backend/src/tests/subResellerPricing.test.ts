@@ -3,8 +3,12 @@ import assert from 'node:assert/strict';
 import mongoose from 'mongoose';
 import {
   getEffectiveBasePrice,
+  getEffectiveMaxPrice,
   getParentAssignedPrice,
+  getParentAssignedMaxPrice,
   getResellerSellPrice,
+  getParentAssignableRange,
+  validateFloorMaxRange,
   splitProfitsFromBaseChain,
 } from '../services/subResellerPricingService';
 import type { IUser } from '../models/User';
@@ -21,6 +25,9 @@ function mockReseller(overrides: Partial<IUser['resellerStore']> = {}): IUser {
       isVerified: true,
       referralCode: 'RS12345',
       parentAssignedPrices: new Map(),
+      parentAssignedMaxPrices: new Map(),
+      subResellerDefaultFloors: new Map(),
+      subResellerDefaultMaxes: new Map(),
       customPrices: new Map(),
       ...overrides,
     },
@@ -41,6 +48,25 @@ test('getEffectiveBasePrice uses parentAssignedPrices when set', () => {
   assert.equal(getEffectiveBasePrice(user, 'pkg1', pkg), 8);
 });
 
+test('getEffectiveMaxPrice uses admin max when no assignment or custom price', () => {
+  const user = mockReseller();
+  assert.equal(getEffectiveMaxPrice(user, 'pkg1', pkg), 12);
+});
+
+test('getEffectiveMaxPrice uses parent assigned max for sub-reseller', () => {
+  const user = mockReseller({
+    parentAssignedMaxPrices: new Map([['pkg1', 10]]),
+  });
+  assert.equal(getEffectiveMaxPrice(user, 'pkg1', pkg), 10);
+});
+
+test('getEffectiveMaxPrice uses own sell price for top-level reseller', () => {
+  const user = mockReseller({
+    customPrices: new Map([['pkg1', 9]]),
+  });
+  assert.equal(getEffectiveMaxPrice(user, 'pkg1', pkg), 9);
+});
+
 test('getResellerSellPrice prefers custom price over effective base', () => {
   const user = mockReseller({
     parentAssignedPrices: new Map([['pkg1', 8]]),
@@ -54,6 +80,21 @@ test('getResellerSellPrice falls back to effective base', () => {
     parentAssignedPrices: new Map([['pkg1', 8]]),
   });
   assert.equal(getResellerSellPrice(user, 'pkg1', pkg), 8);
+});
+
+test('getParentAssignableRange caps ceiling at parent effective max', () => {
+  const parent = mockReseller({ customPrices: new Map([['pkg1', 9]]) });
+  const range = getParentAssignableRange(parent, 'pkg1', pkg);
+  assert.equal(range.parentCost, 6);
+  assert.equal(range.maxCeiling, 9);
+});
+
+test('validateFloorMaxRange rejects max below floor', () => {
+  assert.throws(() => validateFloorMaxRange(8, 7, 6, 12), /below floor/i);
+});
+
+test('validateFloorMaxRange rejects max above ceiling', () => {
+  assert.throws(() => validateFloorMaxRange(6, 13, 6, 12), /cannot exceed/i);
 });
 
 test('splitProfitsFromBaseChain: 3-tier example from plan', () => {
@@ -79,4 +120,21 @@ test('getParentAssignedPrice reads from map', () => {
   });
   assert.equal(getParentAssignedPrice(user, 'abc'), 7.5);
   assert.equal(getParentAssignedPrice(user, 'missing'), undefined);
+});
+
+test('getParentAssignedMaxPrice reads from map', () => {
+  const user = mockReseller({
+    parentAssignedMaxPrices: new Map([['abc', 11]]),
+  });
+  assert.equal(getParentAssignedMaxPrice(user, 'abc'), 11);
+});
+
+test('3-tier cascade: grandchild max bounded by child assigned max', () => {
+  const grandparent = mockReseller({ customPrices: new Map([['pkg1', 11]]) });
+  const parent = mockReseller({
+    parentAssignedPrices: new Map([['pkg1', 8]]),
+    parentAssignedMaxPrices: new Map([['pkg1', 10]]),
+  });
+  assert.equal(getParentAssignableRange(grandparent, 'pkg1', pkg).maxCeiling, 11);
+  assert.equal(getParentAssignableRange(parent, 'pkg1', pkg).maxCeiling, 10);
 });

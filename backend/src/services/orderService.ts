@@ -23,6 +23,7 @@ import { getAgentPrice } from './agentPricingService';
 import {
   computeMultiLevelProfitSplit,
   getEffectiveBasePrice,
+  getEffectiveMaxPrice,
   getResellerSellPrice,
 } from './subResellerPricingService';
 import { env } from '../config/env';
@@ -227,7 +228,10 @@ export const createOrder = async (input: CreateOrderInput) => {
       : basePrice;
 
     sellingPrice = input.sellingPrice ?? customPrice;
-    validateResellerPrice(sellingPrice, basePrice, pkg.maxSellingPrice);
+    const effectiveMax = reseller
+      ? getEffectiveMaxPrice(reseller, pkg._id.toString(), pkg)
+      : pkg.maxSellingPrice;
+    validateResellerPrice(sellingPrice, basePrice, effectiveMax);
 
     const split = input.resellerId
       ? await computeMultiLevelProfitSplit(

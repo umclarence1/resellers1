@@ -16,6 +16,12 @@ export interface IResellerStore {
   referredBy?: mongoose.Types.ObjectId;
   /** Floor prices assigned by parent reseller (packageId → price). */
   parentAssignedPrices: Map<string, number>;
+  /** Max sell ceiling assigned by parent reseller (packageId → price). */
+  parentAssignedMaxPrices: Map<string, number>;
+  /** Default floor prices for new sub-resellers (parent template). */
+  subResellerDefaultFloors: Map<string, number>;
+  /** Default max prices for new sub-resellers (parent template). */
+  subResellerDefaultMaxes: Map<string, number>;
   storeDescription?: string;
   customPrices: Map<string, number>;
 }
@@ -69,6 +75,9 @@ const resellerStoreSchema = new Schema<IResellerStore>(
     referralCode: { type: String, required: true },
     referredBy: { type: Schema.Types.ObjectId, ref: 'User' },
     parentAssignedPrices: { type: Map, of: Number, default: {} },
+    parentAssignedMaxPrices: { type: Map, of: Number, default: {} },
+    subResellerDefaultFloors: { type: Map, of: Number, default: {} },
+    subResellerDefaultMaxes: { type: Map, of: Number, default: {} },
     storeDescription: { type: String, default: '' },
     customPrices: { type: Map, of: Number, default: {} },
   },

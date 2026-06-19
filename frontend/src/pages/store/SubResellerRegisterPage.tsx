@@ -18,6 +18,8 @@ interface ParentInfo {
   storeName: string;
   storeId: string;
   slug: string;
+  signupOpen: boolean;
+  signupReason?: string;
 }
 
 export default function SubResellerRegisterPage() {
@@ -49,13 +51,34 @@ export default function SubResellerRegisterPage() {
   useEffect(() => {
     if (!slug) return;
     setLoadingParent(true);
-    fetchStore<{ storeName: string; slug: string; resellerId: string }>(slug)
-      .then((data) => {
+    Promise.all([
+      fetchStore<{ storeName: string; slug: string; resellerId: string; subResellerSignupOpen?: boolean }>(slug),
+      api.get(`/store/${encodeURIComponent(slug)}/reseller-signup-info`).catch(() => null),
+    ])
+      .then(([storeData, signupRes]) => {
+        const signupData = signupRes?.data?.data as {
+          signupOpen?: boolean;
+          signupReason?: string;
+        } | undefined;
+        const signupOpen =
+          signupData?.signupOpen ??
+          storeData.subResellerSignupOpen ??
+          false;
         setParent({
-          storeName: data.storeName,
-          storeId: data.resellerId,
-          slug: data.slug,
+          storeName: storeData.storeName,
+          storeId: storeData.resellerId,
+          slug: storeData.slug,
+          signupOpen,
+          signupReason: signupData?.signupReason,
         });
+        if (!signupOpen) {
+          setLoadError(
+            signupData?.signupReason ||
+              'This store is not accepting new resellers right now. Please check back later.'
+          );
+        } else {
+          setLoadError('');
+        }
       })
       .catch((err) => setLoadError(err instanceof Error ? err.message : 'Store not found'))
       .finally(() => setLoadingParent(false));

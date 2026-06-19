@@ -22,7 +22,8 @@ import {
 import { getAllCheckerStock } from '../services/checkerStockService';
 import { getCheckerPackage } from '../services/checkerPackageService';
 import { validateAfaDetails } from '../services/orderService';
-import { getEffectiveBasePrice, getResellerSellPrice } from '../services/subResellerPricingService';
+import { getEffectiveBasePrice, getEffectiveMaxPrice, getResellerSellPrice } from '../services/subResellerPricingService';
+import { canAcceptSubResellerSignup } from '../services/resellerStoreReadinessService';
 import { env } from '../config/env';
 import { otpLimiter, purchaseLimiter } from '../middleware/rateLimiter';
 import { rejectFields } from '../middleware/rejectFields';
@@ -52,13 +53,17 @@ const router = Router();
 
 // Parent store info for sub-reseller signup form
 router.get('/:slug/reseller-signup-info', asyncHandler(async (req, res) => {
-  const reseller = await findResellerByStoreSlug(req.params.slug, {
-    select: 'resellerStore status',
+  const reseller = await User.findOne({
+    'resellerStore.slug': storeSlugFromRequest(req.params.slug),
+    role: 'reseller',
   });
 
   if (!reseller?.resellerStore) throw new AppError('Store not found', 404);
-  if (!reseller.resellerStore.isActive || reseller.status !== 'active') {
-    throw new AppError('This store is not accepting new resellers right now', 403);
+
+  const signupStatus = await canAcceptSubResellerSignup(reseller);
+
+  if (!signupStatus.signupOpen && signupStatus.reason === 'This store is not accepting new resellers right now') {
+    throw new AppError(signupStatus.reason, 403);
   }
 
   res.json({
@@ -67,6 +72,10 @@ router.get('/:slug/reseller-signup-info', asyncHandler(async (req, res) => {
       storeName: reseller.resellerStore.storeName,
       storeId: reseller._id.toString(),
       slug: reseller.resellerStore.slug,
+      signupOpen: signupStatus.signupOpen,
+      signupReason: signupStatus.reason,
+      templateConfigured: signupStatus.templateConfigured,
+      templateRequired: signupStatus.templateRequired,
     },
   });
 }));
@@ -79,6 +88,7 @@ router.get('/:slug', asyncHandler(async (req, res) => {
   const settings = await getSettings();
   const afaStock = await getAfaStock();
   const checkerStock = await getAllCheckerStock();
+  const signupStatus = await canAcceptSubResellerSignup(reseller);
 
   res.json({
     success: true,
@@ -91,6 +101,7 @@ router.get('/:slug', asyncHandler(async (req, res) => {
       resellerId: reseller._id,
       isVerified: store.isVerified,
       memberSince: reseller.createdAt,
+      subResellerSignupOpen: signupStatus.signupOpen,
       serviceImages: settings.serviceImages,
       afa: {
         inStock: afaStock.inStock,
@@ -153,7 +164,7 @@ router.get('/:slug/packages/:network', asyncHandler(async (req, res) => {
       bundleSize: pkg.bundleSize,
       price,
       basePrice: effectiveBase,
-      maxPrice: pkg.maxSellingPrice,
+      maxPrice: getEffectiveMaxPrice(reseller, packageId, pkg),
     };
   });
 
@@ -199,7 +210,7 @@ router.get('/:slug/afa', asyncHandler(async (req, res) => {
       total,
       paystackChargePercent,
       basePrice: effectiveBase,
-      maxPrice: pkg.maxSellingPrice,
+      maxPrice: getEffectiveMaxPrice(reseller, packageId, pkg),
       inStock: stock.inStock,
       imageUrl: stock.imageUrl,
       processingHours: AFA_PROCESSING_HOURS,
@@ -235,7 +246,7 @@ async function buildCheckerOffer(
     total,
     paystackChargePercent,
     basePrice: effectiveBase,
-    maxPrice: pkg.maxSellingPrice,
+    maxPrice: getEffectiveMaxPrice(reseller!, packageId, pkg),
     inStock: stockRow.inStock,
     availableCount: stockRow.availableCount,
   };

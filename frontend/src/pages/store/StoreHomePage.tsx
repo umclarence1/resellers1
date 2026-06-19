@@ -18,6 +18,7 @@ interface StoreInfo {
   phone: string;
   whatsapp: string;
   supportEmail: string;
+  subResellerSignupOpen?: boolean;
   serviceImages: Array<{ network: string; imageUrl: string; isAvailable: boolean }>;
   afa?: { inStock: boolean; imageUrl?: string };
   checker?: { inStock: boolean; imageUrl?: string };
@@ -133,17 +134,19 @@ export default function StoreHomePage() {
             </div>
           </section>
 
-          <section className="py-12 border-t border-navy-border">
-            <div className="max-w-xl mx-auto px-4 text-center">
-              <h2 className="text-lg font-bold text-white mb-2">Want to sell data too?</h2>
-              <p className="text-sm text-gray-400 mb-5">
-                Create your own store and set your prices on top of ours.
-              </p>
-              <Link to={buildStoreBecomeResellerPath(slug)}>
-                <Button variant="primary">Become a Reseller</Button>
-              </Link>
-            </div>
-          </section>
+          {store.subResellerSignupOpen !== false && (
+            <section className="py-12 border-t border-navy-border">
+              <div className="max-w-xl mx-auto px-4 text-center">
+                <h2 className="text-lg font-bold text-white mb-2">Want to sell data too?</h2>
+                <p className="text-sm text-gray-400 mb-5">
+                  Create your own store and set your prices on top of ours.
+                </p>
+                <Link to={buildStoreBecomeResellerPath(slug)}>
+                  <Button variant="primary">Become a Reseller</Button>
+                </Link>
+              </div>
+            </section>
+          )}
         </>
       )}
 

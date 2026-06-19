@@ -14,6 +14,7 @@ interface StoreData {
   phone: string;
   whatsapp: string;
   supportEmail: string;
+  subResellerSignupOpen?: boolean;
 }
 
 const TABS: { id: StoreTab; label: string }[] = [
@@ -99,15 +100,17 @@ export default function StoreLayout({
                     </button>
                   </li>
                 ))}
-                <li>
-                  <Link
-                    to={buildStoreBecomeResellerPath(store.slug)}
-                    onClick={() => setMenuOpen(false)}
-                    className="block w-full text-left px-6 py-3.5 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 transition-colors"
-                  >
-                    Become a Reseller
-                  </Link>
-                </li>
+                {store.subResellerSignupOpen !== false && (
+                  <li>
+                    <Link
+                      to={buildStoreBecomeResellerPath(store.slug)}
+                      onClick={() => setMenuOpen(false)}
+                      className="block w-full text-left px-6 py-3.5 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 transition-colors"
+                    >
+                      Become a Reseller
+                    </Link>
+                  </li>
+                )}
               </ul>
             </nav>
           </>

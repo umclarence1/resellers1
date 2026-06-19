@@ -43,7 +43,9 @@ import { buildAuthUserProfile } from '../services/performanceService';
 import { validatePasswordStrength } from '../utils/password';
 import { activateResellerStore } from '../services/resellerOnboardingService';
 import { rejectFields } from '../middleware/rejectFields';
+import { canAcceptSubResellerSignup } from '../services/resellerStoreReadinessService';
 import {
+  copySubResellerTemplateToChild,
   generateUniqueResellerSlug,
   validateStoreSlugInput,
 } from '../services/subResellerPricingService';
@@ -52,6 +54,9 @@ import { isValidStoreSlug } from '../utils/helpers';
 const blockSubResellerPrivilegeFields = rejectFields(
   'referredBy',
   'parentAssignedPrices',
+  'parentAssignedMaxPrices',
+  'subResellerDefaultFloors',
+  'subResellerDefaultMaxes',
   'role',
   'status',
   'customPrices',
@@ -258,6 +263,11 @@ router.post(
       throw new AppError('This store is not accepting new resellers right now', 403);
     }
 
+    const signupStatus = await canAcceptSubResellerSignup(parent);
+    if (!signupStatus.signupOpen) {
+      throw new AppError(signupStatus.reason || 'Sub-reseller signup is not available yet', 403);
+    }
+
     const existing = await User.findOne({ email: email.toLowerCase() });
     if (existing) {
       res.status(201).json({
@@ -294,10 +304,16 @@ router.post(
         referralCode: generateReferralCode(),
         referredBy: parent._id,
         parentAssignedPrices: {},
+        parentAssignedMaxPrices: {},
         storeDescription: storeDescription?.trim() || '',
         customPrices: {},
       },
     });
+
+    copySubResellerTemplateToChild(parent, user);
+    user.markModified('resellerStore.parentAssignedPrices');
+    user.markModified('resellerStore.parentAssignedMaxPrices');
+    await user.save();
 
     await Wallet.create({ userId: user._id });
 

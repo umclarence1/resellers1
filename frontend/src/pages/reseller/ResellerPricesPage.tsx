@@ -184,7 +184,7 @@ export default function ResellerPricesPage() {
         <Card className="p-4 mb-4 border-violet-200 bg-violet-50">
           <p className="text-sm font-medium text-gray-900">Waiting for your parent reseller</p>
           <p className="text-sm text-gray-600 mt-1">
-            Your parent must set your floor prices before you can configure selling prices.
+            Your parent must set your floor and max prices for all products before you can configure selling prices.
             {pricingMeta.parentNetworksMissing && pricingMeta.parentNetworksMissing.length > 0 && (
               <> Missing networks: {pricingMeta.parentNetworksMissing.join(', ')}.</>
             )}
