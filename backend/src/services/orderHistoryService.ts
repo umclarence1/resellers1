@@ -1,4 +1,5 @@
 import { User } from '../models/User';
+import { normalizeStoreSlug } from './storeLookupService';
 import { Order } from '../models/Order';
 import { StoreHistoryOtp } from '../models/StoreHistoryOtp';
 import { AppError } from '../middleware/errorHandler';
@@ -38,8 +39,9 @@ export type OrderHistoryRow = {
 };
 
 const getStoreReseller = async (slug: string) => {
+  const normalized = normalizeStoreSlug(slug);
   const reseller = await User.findOne({
-    'resellerStore.slug': slug,
+    'resellerStore.slug': normalized,
     'resellerStore.isActive': true,
     role: 'reseller',
     status: 'active',

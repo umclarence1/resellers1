@@ -8,7 +8,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { runValidators, v } from '@/lib/form-validation';
 import { redirectToPaystack } from '@/lib/paystack';
 import { formatCurrency } from '@/lib/utils';
-import { buildStoreHomePath, persistStoreRef } from '@/lib/reseller-store-ref';
+import { buildStoreHomePath, persistStoreRef, normalizeStoreSlug } from '@/lib/reseller-store-ref';
 import { AFA_CHECK_USSD, AFA_PROCESSING_HOURS, formatGhanaCardInput, isValidGhanaCard } from '@/lib/afa';
 
 interface AfaOffer {
@@ -21,7 +21,7 @@ interface AfaOffer {
 export default function StoreAfaPage() {
   const params = useParams();
   const navigate = useNavigate();
-  const slug = (params.slug as string)?.trim() || '';
+  const slug = normalizeStoreSlug(params.slug as string || '');
 
   const handleTabChange = (tab: StoreTab) => {
     const extra: Record<string, string> = {};

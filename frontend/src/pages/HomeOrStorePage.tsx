@@ -1,10 +1,11 @@
 import HomePage from '@/pages/HomePage';
+import { normalizeStoreSlug } from '@/lib/reseller-store-ref';
 import { Navigate, useSearchParams } from 'react-router-dom';
 
 /** Main domain home — legacy ?r= links redirect to /store/:slug. */
 export default function HomeOrStorePage() {
   const [searchParams] = useSearchParams();
-  const slug = searchParams.get('r')?.trim();
+  const slug = normalizeStoreSlug(searchParams.get('r') || '');
 
   if (slug) {
     const tab = searchParams.get('tab');

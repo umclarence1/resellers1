@@ -8,7 +8,7 @@ import { cn, formatCurrency } from '@/lib/utils';
 import { useNavigate, useParams } from 'react-router-dom';
 import { runValidators, v } from '@/lib/form-validation';
 import { redirectToPaystack } from '@/lib/paystack';
-import { buildStoreHomePath, persistStoreRef } from '@/lib/reseller-store-ref';
+import { buildStoreHomePath, persistStoreRef, normalizeStoreSlug } from '@/lib/reseller-store-ref';
 
 type CheckerType = 'bece' | 'wassce';
 
@@ -32,7 +32,7 @@ interface CheckerCatalog {
 export default function StoreCheckerPage() {
   const params = useParams();
   const navigate = useNavigate();
-  const slug = (params.slug as string)?.trim() || '';
+  const slug = normalizeStoreSlug(params.slug as string || '');
 
   const handleTabChange = (tab: StoreTab) => {
     const extra: Record<string, string> = {};

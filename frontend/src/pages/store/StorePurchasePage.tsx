@@ -10,12 +10,12 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { StoreTab } from '@/components/store/StoreLayout';
 import { runValidators, v } from '@/lib/form-validation';
 import { redirectToPaystack } from '@/lib/paystack';
-import { buildStoreHomePath, persistStoreRef } from '@/lib/reseller-store-ref';
+import { buildStoreHomePath, persistStoreRef, normalizeStoreSlug } from '@/lib/reseller-store-ref';
 
 export default function StorePurchasePage() {
   const params = useParams();
   const navigate = useNavigate();
-  const slug = (params.slug as string)?.trim() || '';
+  const slug = normalizeStoreSlug(params.slug as string || '');
   const network = decodeURIComponent(params.network as string);
 
   const handleTabChange = (tab: StoreTab) => {

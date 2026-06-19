@@ -6,11 +6,12 @@ import { ShieldCheck } from 'lucide-react';
 import { formatDate } from '@/lib/utils';
 import { useNavigate, useParams } from 'react-router-dom';
 import { StoreTab } from '@/components/store/StoreLayout';
+import { normalizeStoreSlug } from '@/lib/reseller-store-ref';
 
 export default function VerifyPage() {
   const params = useParams();
   const navigate = useNavigate();
-  const slug = params.slug as string;
+  const slug = normalizeStoreSlug(params.slug as string || '');
 
   const handleTabChange = (tab: StoreTab) => {
     navigate(`/store/${slug}`, { state: { tab } });

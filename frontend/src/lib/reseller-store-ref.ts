@@ -11,6 +11,15 @@ export const slugify = (text: string): string =>
     .replace(/[\s_-]+/g, '-')
     .replace(/^-+|-+$/g, '');
 
+/** Normalize slug from URL params (encoding, case, whitespace). */
+export function normalizeStoreSlug(raw: string): string {
+  try {
+    return decodeURIComponent(String(raw ?? '')).trim().toLowerCase();
+  } catch {
+    return String(raw ?? '').trim().toLowerCase();
+  }
+}
+
 const STORE_PATH_RE = /^\/store\/([^/]+)/;
 
 /** Customer-facing store home on the canonical domain (slug from store name). */
@@ -52,9 +61,9 @@ export function readStoreSlugFromPath(pathname: string): string | null {
   const match = pathname.match(STORE_PATH_RE);
   if (!match?.[1]) return null;
   try {
-    return decodeURIComponent(match[1]).trim() || null;
+    return normalizeStoreSlug(match[1]) || null;
   } catch {
-    return match[1].trim() || null;
+    return normalizeStoreSlug(match[1]) || null;
   }
 }
 

@@ -4,7 +4,7 @@ import StoreLayout, { StoreTab } from '@/components/store/StoreLayout';
 import { Card } from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { buildStoreHomePath, persistStoreRef } from '@/lib/reseller-store-ref';
+import { buildStoreHomePath, persistStoreRef, normalizeStoreSlug } from '@/lib/reseller-store-ref';
 import { CheckCircle, Copy } from 'lucide-react';
 
 interface CheckerResult {
@@ -20,7 +20,7 @@ export default function StoreCheckerSuccessPage() {
   const params = useParams();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const slug = (params.slug as string)?.trim() || '';
+  const slug = normalizeStoreSlug(params.slug as string || '');
   const orderId = searchParams.get('orderId') || '';
   const email =
     searchParams.get('email') ||

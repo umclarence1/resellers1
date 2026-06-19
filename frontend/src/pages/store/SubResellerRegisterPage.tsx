@@ -9,7 +9,8 @@ import Button from '@/components/ui/Button';
 import FormAlert from '@/components/ui/FormAlert';
 import { validateRegisterFields } from '@/lib/form-validation';
 import { getPasswordStrength } from '@/lib/password-strength';
-import { buildResellerStoreUrl, buildStoreHomePath, slugify } from '@/lib/reseller-store-ref';
+import { buildResellerStoreUrl, buildStoreHomePath, slugify, normalizeStoreSlug } from '@/lib/reseller-store-ref';
+import { fetchStore } from '@/lib/store-api';
 import StoreLoadState from '@/components/store/StoreLoadState';
 import { X } from 'lucide-react';
 
@@ -21,7 +22,7 @@ interface ParentInfo {
 
 export default function SubResellerRegisterPage() {
   const params = useParams();
-  const slug = (params.slug as string)?.trim() || '';
+  const slug = normalizeStoreSlug(params.slug as string || '');
   const navigate = useNavigate();
   const { setUser } = useAuth();
 
@@ -43,13 +44,13 @@ export default function SubResellerRegisterPage() {
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
 
+  const [retryKey, setRetryKey] = useState(0);
+
   useEffect(() => {
     if (!slug) return;
     setLoadingParent(true);
-    api
-      .get(`/store/${slug}`)
-      .then((res) => {
-        const data = res.data.data as { storeName: string; slug: string; resellerId: string };
+    fetchStore<{ storeName: string; slug: string; resellerId: string }>(slug)
+      .then((data) => {
         setParent({
           storeName: data.storeName,
           storeId: data.resellerId,
@@ -58,7 +59,7 @@ export default function SubResellerRegisterPage() {
       })
       .catch((err) => setLoadError(err instanceof Error ? err.message : 'Store not found'))
       .finally(() => setLoadingParent(false));
-  }, [slug]);
+  }, [slug, retryKey]);
 
   const update = (field: string, value: string) => {
     setForm((f) => {
@@ -132,6 +133,7 @@ export default function SubResellerRegisterPage() {
         loading={loadingParent}
         error={loadError}
         context="signup"
+        onRetry={() => setRetryKey((key) => key + 1)}
       />
     );
   }

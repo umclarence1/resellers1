@@ -36,7 +36,8 @@ export default function ForgotPasswordPage() {
     <AuthLayout title="Reset Password" subtitle="Reseller accounts only — we'll send a reset link to your email">
       {sent ? (
         <div className="text-center">
-          <p className="text-emerald-700 mb-4">If an account exists, a reset link has been sent.</p>
+          <p className="text-emerald-700 mb-2">If an account exists, a reset link has been sent.</p>
+          <p className="text-gray-600 text-sm mb-4">Check your inbox and spam folder. The link expires in 15 minutes.</p>
           <Link to="/login/reseller" className="text-amber-700 hover:underline text-sm">Back to Reseller Login</Link>
         </div>
       ) : (

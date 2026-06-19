@@ -200,17 +200,38 @@ export const sendAdminActionOtpEmail = async (email: string, code: string): Prom
 };
 
 export const sendPasswordResetEmail = async (email: string, resetLink: string): Promise<void> => {
+  const subject = `Reset Your Password - ${PLATFORM_NAME}`;
+  const text = [
+    `${PLATFORM_NAME} password reset`,
+    '',
+    'Click the link below to reset your password. This link expires in 15 minutes.',
+    '',
+    resetLink,
+    '',
+    'If you did not request this, ignore this email.',
+  ].join('\n');
+
   const html = `
-    <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto;">
-      <h2 style="color: #1e40af;">Password Reset</h2>
-      <p>Click the link below to reset your password. This link expires in 15 minutes.</p>
+    <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 16px;">
+      <h2 style="color: #1e40af; margin: 0 0 12px;">Password Reset</h2>
+      <p style="color: #374151;">Click the button below to reset your password. This link expires in 15 minutes.</p>
       <a href="${resetLink}" style="display: inline-block; background: #1e40af; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; margin: 16px 0;">
         Reset Password
       </a>
-      <p style="color: #6b7280;">If you didn't request this, ignore this email.</p>
+      <p style="color: #6b7280; font-size: 13px;">If the button does not work, copy and paste this link into your browser:</p>
+      <p style="color: #6b7280; font-size: 13px; word-break: break-all;">${resetLink}</p>
+      <p style="color: #6b7280; font-size: 13px;">If you did not request this, ignore this email.</p>
     </div>
   `;
-  await sendEmail(email, `Reset Your Password - ${PLATFORM_NAME}`, html);
+
+  try {
+    await sendWithOtpRetry('Password reset email', email, () =>
+      dispatchPriorityEmail({ to: email, subject, text, html })
+    );
+  } catch (err) {
+    console.error('[Password reset email failed]', email, err instanceof Error ? err.message : err);
+    throw new EmailDeliveryError('Could not send reset email. Please try again in a moment.');
+  }
 };
 
 export const sendOrderHistoryOtpEmail = async (

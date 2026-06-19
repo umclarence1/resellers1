@@ -41,15 +41,20 @@ import {
   verifyOrderHistoryOtp,
   verifyOrderHistoryOtpByPhone,
 } from '../services/orderHistoryService';
+import {
+  findResellerByStoreSlug,
+  requireOpenResellerStore,
+  requireResellerStore,
+  storeSlugFromRequest,
+} from '../services/storeLookupService';
 
 const router = Router();
 
 // Parent store info for sub-reseller signup form
 router.get('/:slug/reseller-signup-info', asyncHandler(async (req, res) => {
-  const reseller = await User.findOne({
-    'resellerStore.slug': req.params.slug,
-    role: 'reseller',
-  }).select('resellerStore status');
+  const reseller = await findResellerByStoreSlug(req.params.slug, {
+    select: 'resellerStore status',
+  });
 
   if (!reseller?.resellerStore) throw new AppError('Store not found', 404);
   if (!reseller.resellerStore.isActive || reseller.status !== 'active') {
@@ -68,15 +73,8 @@ router.get('/:slug/reseller-signup-info', asyncHandler(async (req, res) => {
 
 // Get store by slug
 router.get('/:slug', asyncHandler(async (req, res) => {
-  const reseller = await User.findOne({
-    'resellerStore.slug': req.params.slug,
-    role: 'reseller',
-  }).select('-password');
-
-  if (!reseller?.resellerStore) throw new AppError('Store not found', 404);
-  if (!reseller.resellerStore.isActive || reseller.status !== 'active') {
-    throw new AppError('This store is currently unavailable', 403);
-  }
+  const reseller = await requireOpenResellerStore(req.params.slug, '-password');
+  const store = reseller.resellerStore!;
 
   const settings = await getSettings();
   const afaStock = await getAfaStock();
@@ -85,13 +83,13 @@ router.get('/:slug', asyncHandler(async (req, res) => {
   res.json({
     success: true,
     data: {
-      storeName: reseller.resellerStore.storeName,
-      slug: reseller.resellerStore.slug,
-      phone: reseller.resellerStore.phone,
-      whatsapp: reseller.resellerStore.whatsapp,
-      supportEmail: reseller.resellerStore.supportEmail,
+      storeName: store.storeName,
+      slug: store.slug,
+      phone: store.phone,
+      whatsapp: store.whatsapp,
+      supportEmail: store.supportEmail,
       resellerId: reseller._id,
-      isVerified: reseller.resellerStore.isVerified,
+      isVerified: store.isVerified,
       memberSince: reseller.createdAt,
       serviceImages: settings.serviceImages,
       afa: {
@@ -112,31 +110,27 @@ router.get('/:slug', asyncHandler(async (req, res) => {
 
 // Verify page
 router.get('/:slug/verify', asyncHandler(async (req, res) => {
-  const reseller = await User.findOne({
-    'resellerStore.slug': req.params.slug,
-    role: 'reseller',
-  }).select('resellerStore createdAt status');
-
-  if (!reseller?.resellerStore) throw new AppError('Store not found', 404);
+  const reseller = await requireResellerStore(req.params.slug, {
+    select: 'resellerStore createdAt status',
+  });
+  const store = reseller.resellerStore!;
 
   res.json({
     success: true,
     data: {
-      storeName: reseller.resellerStore.storeName,
+      storeName: store.storeName,
       resellerId: reseller._id,
-      verificationStatus: reseller.resellerStore.isVerified ? 'Verified Reseller' : 'Unverified',
+      verificationStatus: store.isVerified ? 'Verified Reseller' : 'Unverified',
       registrationDate: reseller.createdAt,
-      activeStatus: reseller.resellerStore.isActive && reseller.status === 'active' ? 'Active' : 'Inactive',
+      activeStatus: store.isActive && reseller.status === 'active' ? 'Active' : 'Inactive',
     },
   });
 }));
 
 // Network packages for store
 router.get('/:slug/packages/:network', asyncHandler(async (req, res) => {
-  const reseller = await User.findOne({
-    'resellerStore.slug': req.params.slug,
-    'resellerStore.isActive': true,
-    role: 'reseller',
+  const reseller = await findResellerByStoreSlug(req.params.slug, {
+    requireActiveStore: true,
   });
 
   if (!reseller) throw new AppError('Store not found', 404);
@@ -178,10 +172,8 @@ router.get('/:slug/packages/:network', asyncHandler(async (req, res) => {
 }));
 
 router.get('/:slug/afa', asyncHandler(async (req, res) => {
-  const reseller = await User.findOne({
-    'resellerStore.slug': req.params.slug,
-    'resellerStore.isActive': true,
-    role: 'reseller',
+  const reseller = await findResellerByStoreSlug(req.params.slug, {
+    requireActiveStore: true,
   });
   if (!reseller) throw new AppError('Store not found', 404);
 
@@ -250,10 +242,8 @@ async function buildCheckerOffer(
 }
 
 router.get('/:slug/checker', asyncHandler(async (req, res) => {
-  const reseller = await User.findOne({
-    'resellerStore.slug': req.params.slug,
-    'resellerStore.isActive': true,
-    role: 'reseller',
+  const reseller = await findResellerByStoreSlug(req.params.slug, {
+    requireActiveStore: true,
   });
   if (!reseller) throw new AppError('Store not found', 404);
 
@@ -279,10 +269,8 @@ router.post('/:slug/checker/purchase/init', purchaseLimiter, blockStorePricing, 
   }
 
   const checkerType = normalizeCheckerType(type);
-  const reseller = await User.findOne({
-    'resellerStore.slug': req.params.slug,
-    'resellerStore.isActive': true,
-    role: 'reseller',
+  const reseller = await findResellerByStoreSlug(req.params.slug, {
+    requireActiveStore: true,
   });
   if (!reseller) throw new AppError('Store not found', 404);
 
@@ -308,7 +296,7 @@ router.post('/:slug/checker/purchase/init', purchaseLimiter, blockStorePricing, 
     processingFee: offer.processingFee,
     expectedTotal: offer.total,
     reference,
-    storeSlug: req.params.slug,
+    storeSlug: storeSlugFromRequest(req.params.slug),
     productKind: 'checker',
   });
 
@@ -364,10 +352,8 @@ router.post('/:slug/purchase/init', purchaseLimiter, blockStorePricing, asyncHan
     throw new AppError('Package and email are required');
   }
 
-  const reseller = await User.findOne({
-    'resellerStore.slug': req.params.slug,
-    'resellerStore.isActive': true,
-    role: 'reseller',
+  const reseller = await findResellerByStoreSlug(req.params.slug, {
+    requireActiveStore: true,
   });
   if (!reseller) throw new AppError('Store not found', 404);
 
@@ -410,7 +396,7 @@ router.post('/:slug/purchase/init', purchaseLimiter, blockStorePricing, asyncHan
     processingFee,
     expectedTotal: total,
     reference,
-    storeSlug: req.params.slug,
+    storeSlug: storeSlugFromRequest(req.params.slug),
     ...(afaDetails
       ? {
           afaDetails: {

@@ -23,7 +23,8 @@ import {
 } from '../services/totpService';
 import { createAndSendOtp, verifyOtp, incrementOtpAttempts } from '../utils/otp';
 import { signAccessToken } from '../utils/jwt';
-import { sendPasswordResetEmail } from '../utils/email';
+import { EmailDeliveryError, sendPasswordResetEmail } from '../utils/email';
+import { getCanonicalFrontendUrl } from '../config/urls';
 import { env } from '../config/env';
 import { logSecurityEvent } from '../services/securityAuditService';
 import {
@@ -604,10 +605,14 @@ router.post(
         expiresAt: new Date(Date.now() + 15 * 60 * 1000),
       });
 
-      const resetLink = `${env.frontendUrl}/reset-password?token=${token}`;
-      void sendPasswordResetEmail(email, resetLink).catch((err) => {
+      const resetLink = `${getCanonicalFrontendUrl()}/reset-password?token=${token}`;
+      try {
+        await sendPasswordResetEmail(email, resetLink);
+      } catch (err) {
         console.error('[Password reset email failed]', email, err instanceof Error ? err.message : err);
-      });
+        if (err instanceof EmailDeliveryError) throw err;
+        throw new EmailDeliveryError('Could not send reset email. Please try again in a moment.');
+      }
     }
 
     res.json({

@@ -9,7 +9,8 @@ import StoreContactLinks from '@/components/store/StoreContactLinks';
 import { FeatureCard, ServiceCard, InfoCard } from '@/components/ui/ModernCard';
 import { getNetworkImage } from '@/lib/network-images';
 import { useParams, Link, useLocation, useSearchParams, useNavigate } from 'react-router-dom';
-import { buildStoreBuyPath, buildStoreHomePath, buildStoreAfaPath, buildStoreCheckerPath, buildStoreBecomeResellerPath, persistStoreRef } from '@/lib/reseller-store-ref';
+import { buildStoreBuyPath, buildStoreHomePath, buildStoreAfaPath, buildStoreCheckerPath, buildStoreBecomeResellerPath, persistStoreRef, normalizeStoreSlug } from '@/lib/reseller-store-ref';
+import { fetchStore } from '@/lib/store-api';
 
 interface StoreInfo {
   storeName: string;
@@ -27,12 +28,13 @@ export default function StoreHomePage() {
   const location = useLocation();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const slug = (params.slug as string)?.trim() || '';
+  const slug = normalizeStoreSlug(params.slug as string || '');
   const tabParam = searchParams.get('tab') as StoreTab | null;
   const paidSuccess = searchParams.get('paid') === '1';
   const [store, setStore] = useState<StoreInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
+  const [retryKey, setRetryKey] = useState(0);
   const [faqs, setFaqs] = useState<Array<{ question: string; answer: string }>>([]);
   const [openFaq, setOpenFaq] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<StoreTab>(
@@ -50,18 +52,18 @@ export default function StoreHomePage() {
     setLoadError('');
     setStore(null);
 
-    api.get(`/store/${slug}`)
-      .then((res) => {
-        setStore(res.data.data);
-        document.title = `${res.data.data.storeName} — Data bundles`;
+    fetchStore<StoreInfo>(slug)
+      .then((data) => {
+        setStore(data);
+        document.title = `${data.storeName} — Data bundles`;
       })
       .catch((err) => setLoadError(err instanceof Error ? err.message : 'Store not found'))
       .finally(() => setLoading(false));
 
-    api.get(`/store/${slug}/faqs`)
+    api.get(`/store/${encodeURIComponent(slug)}/faqs`)
       .then((res) => setFaqs(res.data.data))
       .catch(() => setFaqs([]));
-  }, [slug]);
+  }, [slug, retryKey]);
 
   const handleTabChange = (tab: StoreTab) => {
     setActiveTab(tab);
@@ -77,7 +79,13 @@ export default function StoreHomePage() {
   }
 
   if (loading || loadError) {
-    return <StoreLoadState loading={loading} error={loadError} />;
+    return (
+      <StoreLoadState
+        loading={loading}
+        error={loadError}
+        onRetry={() => setRetryKey((key) => key + 1)}
+      />
+    );
   }
   if (!store) return null;
 

@@ -1,10 +1,13 @@
 import BackHomeLink from '@/components/ui/BackHomeLink';
+import Button from '@/components/ui/Button';
+import { isRetryableStoreError } from '@/lib/store-api';
 
 interface StoreLoadStateProps {
   loading: boolean;
   error: string;
   /** When loading the sub-reseller signup form, show signup-specific copy. */
   context?: 'store' | 'signup';
+  onRetry?: () => void;
 }
 
 function storeErrorCopy(error: string, context: StoreLoadStateProps['context'] = 'store') {
@@ -42,7 +45,7 @@ function storeErrorCopy(error: string, context: StoreLoadStateProps['context'] =
   };
 }
 
-export default function StoreLoadState({ loading, error, context = 'store' }: StoreLoadStateProps) {
+export default function StoreLoadState({ loading, error, context = 'store', onRetry }: StoreLoadStateProps) {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-navy text-gray-400">
@@ -53,12 +56,20 @@ export default function StoreLoadState({ loading, error, context = 'store' }: St
 
   if (error) {
     const copy = storeErrorCopy(error, context);
+    const showRetry = Boolean(onRetry && isRetryableStoreError(error));
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-navy px-4 text-center">
         <div className="max-w-md bg-white rounded-xl p-8 shadow-xl">
           <h1 className="text-xl font-bold text-gray-900 mb-3">{copy.title}</h1>
           <p className="text-gray-600 mb-8 leading-relaxed">{copy.message}</p>
-          <BackHomeLink variant="onLight" />
+          <div className="flex flex-col gap-3">
+            {showRetry && (
+              <Button type="button" className="w-full" onClick={onRetry}>
+                Try again
+              </Button>
+            )}
+            <BackHomeLink variant="onLight" />
+          </div>
         </div>
       </div>
     );
