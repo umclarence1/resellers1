@@ -188,9 +188,9 @@ router.get('/:slug/afa', asyncHandler(async (req, res) => {
   const [stock, pkg] = await Promise.all([getAfaStock(), getAfaPackage()]);
   if (!pkg || !pkg.isEnabled) throw new AppError('AFA registration is not available', 503);
 
-  const customPrice = reseller.resellerStore?.customPrices.get(pkg._id.toString());
-  const effectiveBase = getEffectiveBasePrice(reseller, pkg._id.toString(), pkg);
-  const price = customPrice ?? effectiveBase;
+  const packageId = pkg._id.toString();
+  const effectiveBase = getEffectiveBasePrice(reseller, packageId, pkg);
+  const price = getResellerSellPrice(reseller, packageId, pkg);
 
   const settings = await getSettings();
   const paystackChargePercent = settings.paystackChargePercent ?? 2;

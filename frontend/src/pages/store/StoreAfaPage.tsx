@@ -14,9 +14,6 @@ import { AFA_CHECK_USSD, AFA_PROCESSING_HOURS, formatGhanaCardInput, isValidGhan
 interface AfaOffer {
   packageId: string;
   price: number;
-  processingFee: number;
-  total: number;
-  paystackChargePercent: number;
   inStock: boolean;
   imageUrl?: string;
 }
@@ -111,9 +108,6 @@ export default function StoreAfaPage() {
         <Card className="p-0 overflow-hidden">
           <div className="bg-blue-600 px-6 py-4 text-center">
             <h1 className="text-xl font-bold text-white">AFA Registration</h1>
-            {offer?.inStock && offer.price > 0 && (
-              <p className="text-2xl font-bold text-white mt-1">{formatCurrency(offer.price)}</p>
-            )}
           </div>
 
           <form noValidate onSubmit={handlePurchase} className="p-4 sm:p-6 space-y-4">
@@ -168,25 +162,17 @@ export default function StoreAfaPage() {
             />
 
             {offer?.inStock && offer.price > 0 && (
-              <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 space-y-2 text-sm">
-                <div className="flex justify-between text-gray-600">
+              <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm">
+                <div className="flex justify-between font-semibold text-gray-900">
                   <span>Registration fee</span>
                   <span>{formatCurrency(offer.price)}</span>
-                </div>
-                <div className="flex justify-between text-gray-600">
-                  <span>Paystack fee ({offer.paystackChargePercent}%)</span>
-                  <span>{formatCurrency(offer.processingFee)}</span>
-                </div>
-                <div className="flex justify-between font-semibold text-gray-900 pt-2 border-t border-gray-200">
-                  <span>Total to pay</span>
-                  <span>{formatCurrency(offer.total)}</span>
                 </div>
               </div>
             )}
 
             <Button type="submit" loading={loading} disabled={!offer?.inStock} className="w-full">
-              {offer?.inStock && offer.total > 0
-                ? `Pay ${formatCurrency(offer.total)} & Register`
+              {offer?.inStock && offer.price > 0
+                ? `Pay ${formatCurrency(offer.price)} & Register`
                 : 'Pay & Register'}
             </Button>
           </form>
