@@ -44,6 +44,7 @@ export default function ResellerSubResellerPricesPage() {
   const [child, setChild] = useState<ChildInfo | null>(null);
   const [packages, setPackages] = useState<PriceRow[]>([]);
   const [checkerPackages, setCheckerPackages] = useState<PriceRow[]>([]);
+  const [afaPackages, setAfaPackages] = useState<PriceRow[]>([]);
   const [pageLoading, setPageLoading] = useState(true);
   const [error, setError] = useState('');
   const [editing, setEditing] = useState<string | null>(null);
@@ -63,6 +64,7 @@ export default function ResellerSubResellerPricesPage() {
         setChild(res.data.data.child);
         setPackages(res.data.data.packages);
         setCheckerPackages(res.data.data.checkerPackages || []);
+        setAfaPackages(res.data.data.afaPackages || []);
         setError('');
       })
       .catch((err) => setError(err instanceof Error ? err.message : 'Failed to load'))
@@ -196,6 +198,7 @@ export default function ResellerSubResellerPricesPage() {
       ) : (
         <div className="space-y-6">
           {packages.length > 0 && renderTable('Data Bundles', packages)}
+          {afaPackages.length > 0 && renderTable('MTN AFA Registration', afaPackages)}
           {checkerPackages.length > 0 && renderTable('Results Checkers', checkerPackages)}
         </div>
       )}

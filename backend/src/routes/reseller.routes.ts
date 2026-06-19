@@ -13,6 +13,7 @@ import { validateResellerPrice } from '../services/orderService';
 import { computeResellerProfit, resellerProfitRange } from '../services/resellerProfitService';
 import { getNetworkStockList } from '../services/networkStockService';
 import { getAfaStock } from '../services/afaStockService';
+import { getAfaPackage } from '../services/afaPackageService';
 import { getAllCheckerStock } from '../services/checkerStockService';
 import { getSettings } from '../services/settingsService';
 import { canSubmitComplaint, isComplaintsEnabledForUser } from '../services/settingsService';
@@ -313,10 +314,33 @@ router.get('/prices', asyncHandler(async (req: AuthRequest, res) => {
     };
   });
 
+  const afaPkg = await getAfaPackage();
+  let afaPackage = null;
+  if (afaPkg) {
+    const packageId = afaPkg._id.toString();
+    const custom = getCustomPrice(user, packageId);
+    const effectiveBase = getEffectiveBasePrice(user, packageId, afaPkg);
+    const myPrice = custom ?? effectiveBase;
+    afaPackage = {
+      _id: afaPkg._id,
+      network: afaPkg.network,
+      bundleSize: afaPkg.bundleSize,
+      productType: afaPkg.productType,
+      resellerBasePrice: effectiveBase,
+      adminBasePrice: afaPkg.resellerBasePrice,
+      maxSellingPrice: afaPkg.maxSellingPrice,
+      myPrice,
+      hasCustomPrice: custom !== undefined,
+      profitPerSale: computeResellerProfit(myPrice, effectiveBase),
+      ...resellerProfitRange(effectiveBase, afaPkg.maxSellingPrice),
+    };
+  }
+
   res.json({
     success: true,
     data,
     checkerPackages: checkerData,
+    afaPackage,
     meta: {
       pricesReady: pricing.pricesReady,
       configuredCount: pricing.configuredCount,
@@ -338,8 +362,10 @@ router.put('/prices/:packageId', asyncHandler(async (req: AuthRequest, res) => {
   const pkg = await Package.findById(req.params.packageId);
   if (!pkg) throw new AppError('Package not found');
   const isChecker = pkg.productType === 'checker';
+  const isAfa = pkg.productType === 'afa';
   if (
     !isChecker &&
+    !isAfa &&
     !RESELLER_STORE_NETWORKS.includes(pkg.network as (typeof RESELLER_STORE_NETWORKS)[number])
   ) {
     throw new AppError('This package cannot be priced');
@@ -439,6 +465,11 @@ router.get('/sub-resellers/:childId/prices', asyncHandler(async (req: AuthReques
     productType: 'checker',
   }).sort({ bundleSize: 1 });
 
+  const afaPackages = await Package.find({
+    isEnabled: true,
+    productType: 'afa',
+  }).sort({ bundleSize: 1 });
+
   const mapRow = (pkg: InstanceType<typeof Package>) => {
     const packageId = pkg._id.toString();
     const parentFloor = getEffectiveBasePrice(parent, packageId, pkg);
@@ -469,6 +500,7 @@ router.get('/sub-resellers/:childId/prices', asyncHandler(async (req: AuthReques
       },
       packages: packages.map(mapRow),
       checkerPackages: checkerPackages.map(mapRow),
+      afaPackages: afaPackages.map(mapRow),
     },
   });
 }));

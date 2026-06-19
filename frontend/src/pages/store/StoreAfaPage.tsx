@@ -31,6 +31,7 @@ export default function StoreAfaPage() {
 
   const [store, setStore] = useState<Record<string, string> | null>(null);
   const [offer, setOffer] = useState<AfaOffer | null>(null);
+  const [offerLoading, setOfferLoading] = useState(true);
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
   const [ghanaCard, setGhanaCard] = useState('');
@@ -46,7 +47,11 @@ export default function StoreAfaPage() {
       setStore(res.data.data);
       document.title = `${res.data.data.storeName} — AFA Registration`;
     });
-    api.get(`/store/${slug}/afa`).then((res) => setOffer(res.data.data as AfaOffer)).catch(() => setOffer(null));
+    api
+      .get(`/store/${slug}/afa`)
+      .then((res) => setOffer(res.data.data as AfaOffer))
+      .catch(() => setOffer(null))
+      .finally(() => setOfferLoading(false));
   }, [slug]);
 
   const handlePurchase = async (e: React.FormEvent) => {
@@ -161,19 +166,31 @@ export default function StoreAfaPage() {
               disabled={!offer?.inStock}
             />
 
-            {offer?.inStock && offer.price > 0 && (
-              <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm">
-                <div className="flex justify-between font-semibold text-gray-900">
-                  <span>Registration fee</span>
-                  <span>{formatCurrency(offer.price)}</span>
+            {offerLoading ? (
+              <p className="text-sm text-gray-500 text-center py-2">Loading store price…</p>
+            ) : (
+              offer?.inStock &&
+              offer.price > 0 && (
+                <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm">
+                  <div className="flex justify-between font-semibold text-gray-900">
+                    <span>Registration fee</span>
+                    <span>{formatCurrency(offer.price)}</span>
+                  </div>
                 </div>
-              </div>
+              )
             )}
 
-            <Button type="submit" loading={loading} disabled={!offer?.inStock} className="w-full">
-              {offer?.inStock && offer.price > 0
-                ? `Pay ${formatCurrency(offer.price)} & Register`
-                : 'Pay & Register'}
+            <Button
+              type="submit"
+              loading={loading}
+              disabled={!offer?.inStock || offerLoading}
+              className="w-full"
+            >
+              {offerLoading
+                ? 'Loading…'
+                : offer?.inStock && offer.price > 0
+                  ? `Pay ${formatCurrency(offer.price)} & Register`
+                  : 'Pay & Register'}
             </Button>
           </form>
         </Card>

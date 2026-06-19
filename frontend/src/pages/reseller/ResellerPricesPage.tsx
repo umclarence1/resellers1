@@ -39,6 +39,7 @@ export default function ResellerPricesPage() {
   const navigate = useNavigate();
   const [packages, setPackages] = useState<PackageRow[]>([]);
   const [checkerPackages, setCheckerPackages] = useState<PackageRow[]>([]);
+  const [afaPackage, setAfaPackage] = useState<PackageRow | null>(null);
   const [pageLoading, setPageLoading] = useState(true);
   const [editing, setEditing] = useState<string | null>(null);
   const [price, setPrice] = useState('');
@@ -55,6 +56,7 @@ export default function ResellerPricesPage() {
     parentNetworksMissing?: string[];
     hasParent?: boolean;
     networkStock?: NetworkStockRow[];
+    afaStock?: { inStock: boolean };
   } | null>(null);
 
   useEffect(() => {
@@ -69,6 +71,7 @@ export default function ResellerPricesPage() {
       .then((res) => {
         setPackages(res.data.data);
         setCheckerPackages((res.data.checkerPackages as PackageRow[]) || []);
+        setAfaPackage((res.data.afaPackage as PackageRow | null) ?? null);
         if (res.data.meta) setPricingMeta(res.data.meta);
         setError('');
       })
@@ -111,6 +114,63 @@ export default function ResellerPricesPage() {
   const orderedNetworks = NETWORK_ORDER.filter((network) => grouped[network]?.length);
   const networkStock = pricingMeta?.networkStock ?? [];
   const stockByNetwork = Object.fromEntries(networkStock.map((row) => [row.network, row.inStock]));
+  const afaInStock = pricingMeta?.afaStock?.inStock ?? true;
+
+  const renderPriceRow = (p: PackageRow, inStock: boolean) => {
+    const draftPrice = editing === p._id ? parseFloat(price) : p.myPrice;
+    const liveProfit = Number.isFinite(draftPrice)
+      ? computeResellerProfit(draftPrice, p.resellerBasePrice)
+      : p.profitPerSale;
+    return (
+      <tr key={p._id} className={panelTableRowClass}>
+        <td className={cn(panelTableCellClass, 'font-medium text-gray-900')}>{p.bundleSize}</td>
+        <td className={cn(panelTableCellClass, 'text-gray-600')}>{formatCurrency(p.resellerBasePrice)}</td>
+        <td className={cn(panelTableCellClass, 'text-gray-600')}>{formatCurrency(p.maxSellingPrice)}</td>
+        <td className={panelTableCellClass}>
+          {editing === p._id ? (
+            <input
+              type="number"
+              step="0.01"
+              min={p.resellerBasePrice}
+              max={p.maxSellingPrice}
+              value={price}
+              onChange={(e) => setPrice(e.target.value)}
+              className="w-24 px-2 py-1.5 border border-gray-200 rounded-lg text-gray-900 focus:ring-2 focus:ring-gold/50 focus:border-gold outline-none"
+            />
+          ) : (
+            <span className="font-semibold text-emerald-700">{formatCurrency(p.myPrice)}</span>
+          )}
+        </td>
+        <td className={panelTableCellClass}>
+          <span className="font-semibold text-emerald-700">{formatCurrency(liveProfit)}</span>
+        </td>
+        <td className={panelTableCellClass}>
+          {!inStock ? (
+            <span className="text-xs text-amber-700 font-medium">Out of stock</span>
+          ) : pricingMeta?.parentPricesPending ? (
+            <span className="text-xs text-violet-600 font-medium">Awaiting parent</span>
+          ) : editing === p._id ? (
+            <div className="flex gap-2">
+              <Button size="sm" loading={saving} onClick={() => savePrice(p._id)}>Save</Button>
+              <Button size="sm" variant="outline" onClick={() => setEditing(null)}>Cancel</Button>
+            </div>
+          ) : (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                setEditing(p._id);
+                setPrice(String(p.myPrice));
+                setError('');
+              }}
+            >
+              Edit
+            </Button>
+          )}
+        </td>
+      </tr>
+    );
+  };
 
   return (
     <DashboardLayout role="reseller">
@@ -281,6 +341,28 @@ export default function ResellerPricesPage() {
               </PanelTable>
             );
           })}
+          {afaPackage && (
+            <PanelTable>
+              <PanelTableHeader
+                title="MTN AFA Registration"
+                imageUrl="/images/afa.jpg"
+                trailing="Store price"
+              />
+              <PanelTableScroll minWidth={560}>
+                <thead className={panelTableHeadClass}>
+                  <tr>
+                    <th className={panelTableTh()}>Service</th>
+                    <th className={panelTableTh()}>{pricingMeta?.hasParent ? 'Your cost' : 'Min (Base)'}</th>
+                    <th className={panelTableTh()}>Max</th>
+                    <th className={panelTableTh()}>Your price</th>
+                    <th className={panelTableTh('emerald')}>Your profit</th>
+                    <th className={panelTableTh()}>Action</th>
+                  </tr>
+                </thead>
+                <tbody>{renderPriceRow(afaPackage, afaInStock)}</tbody>
+              </PanelTableScroll>
+            </PanelTable>
+          )}
           {checkerPackages.length > 0 && (
             <PanelTable>
               <PanelTableHeader
@@ -299,61 +381,7 @@ export default function ResellerPricesPage() {
                     <th className={panelTableTh()}>Action</th>
                   </tr>
                 </thead>
-                <tbody>
-                  {checkerPackages.map((p) => {
-                    const draftPrice = editing === p._id ? parseFloat(price) : p.myPrice;
-                    const liveProfit = Number.isFinite(draftPrice)
-                      ? computeResellerProfit(draftPrice, p.resellerBasePrice)
-                      : p.profitPerSale;
-                    return (
-                      <tr key={p._id} className={panelTableRowClass}>
-                        <td className={cn(panelTableCellClass, 'font-medium text-gray-900')}>{p.bundleSize}</td>
-                        <td className={cn(panelTableCellClass, 'text-gray-600')}>{formatCurrency(p.resellerBasePrice)}</td>
-                        <td className={cn(panelTableCellClass, 'text-gray-600')}>{formatCurrency(p.maxSellingPrice)}</td>
-                        <td className={panelTableCellClass}>
-                          {editing === p._id ? (
-                            <input
-                              type="number"
-                              step="0.01"
-                              min={p.resellerBasePrice}
-                              max={p.maxSellingPrice}
-                              value={price}
-                              onChange={(e) => setPrice(e.target.value)}
-                              className="w-24 px-2 py-1.5 border border-gray-200 rounded-lg text-gray-900 focus:ring-2 focus:ring-gold/50 focus:border-gold outline-none"
-                            />
-                          ) : (
-                            <span className="font-semibold text-emerald-700">{formatCurrency(p.myPrice)}</span>
-                          )}
-                        </td>
-                        <td className={panelTableCellClass}>
-                          <span className="font-semibold text-emerald-700">{formatCurrency(liveProfit)}</span>
-                        </td>
-                        <td className={panelTableCellClass}>
-                          {pricingMeta?.parentPricesPending ? (
-                            <span className="text-xs text-violet-600 font-medium">Awaiting parent</span>
-                          ) : editing === p._id ? (
-                            <div className="flex gap-2">
-                              <Button size="sm" loading={saving} onClick={() => savePrice(p._id)}>Save</Button>
-                              <Button size="sm" variant="outline" onClick={() => setEditing(null)}>Cancel</Button>
-                            </div>
-                          ) : (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => {
-                                setEditing(p._id);
-                                setPrice(String(p.myPrice));
-                                setError('');
-                              }}
-                            >
-                              Edit
-                            </Button>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
+                <tbody>{checkerPackages.map((p) => renderPriceRow(p, true))}</tbody>
               </PanelTableScroll>
             </PanelTable>
           )}
