@@ -826,6 +826,7 @@ export default function AdminSettingsPage() {
                 <h3 className="text-sm font-semibold text-gray-900">Email OTP (login &amp; signup)</h3>
                 <p className="text-xs text-gray-500">
                   When off, resellers or agents sign in with password only — no email verification code.
+                  Individual overrides are available on the Resellers and Agents pages.
                 </p>
                 <label className="flex items-center justify-between gap-3 text-sm text-gray-700 cursor-pointer">
                   <span>Require reseller email OTP</span>

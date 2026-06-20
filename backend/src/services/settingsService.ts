@@ -59,11 +59,19 @@ export async function isRoleEmailOtpEnabled(role: 'reseller' | 'agent'): Promise
   return settings.authSettings?.agentEmailOtpEnabled !== false;
 }
 
-export async function shouldSkipEmailOtpForUser(user: { role: string }): Promise<boolean> {
+export async function shouldSkipEmailOtpForUser(user: {
+  role: string;
+  emailOtpEnabled?: boolean;
+}): Promise<boolean> {
   if (process.env.DEV_SKIP_OTP === 'true') return true;
-  if (user.role === 'reseller') return !(await isRoleEmailOtpEnabled('reseller'));
-  if (user.role === 'agent') return !(await isRoleEmailOtpEnabled('agent'));
-  return false;
+  if (user.role === 'reseller') {
+    if (!(await isRoleEmailOtpEnabled('reseller'))) return true;
+  } else if (user.role === 'agent') {
+    if (!(await isRoleEmailOtpEnabled('agent'))) return true;
+  } else {
+    return false;
+  }
+  return user.emailOtpEnabled === false;
 }
 
 export function normalizeNetworkRoute(value: unknown): FulfillmentNetworkRoute {

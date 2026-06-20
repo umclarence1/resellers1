@@ -156,6 +156,26 @@ router.put('/agents/:id', asyncHandler(async (req: AuthRequest, res) => {
   res.json({ success: true, data: dealer });
 }));
 
+router.patch('/agents/:id/email-otp', asyncHandler(async (req: AuthRequest, res) => {
+  const { emailOtpEnabled } = req.body;
+  if (typeof emailOtpEnabled !== 'boolean') {
+    throw new AppError('emailOtpEnabled must be true or false');
+  }
+
+  const agent = await User.findOne({ _id: req.params.id, role: 'agent' });
+  if (!agent) throw new AppError('Agent not found');
+
+  agent.emailOtpEnabled = emailOtpEnabled;
+  await agent.save();
+  await logAudit(req, 'update', 'agent_email_otp', agent._id.toString(), { emailOtpEnabled });
+
+  res.json({
+    success: true,
+    message: emailOtpEnabled ? 'Email OTP enabled for agent' : 'Email OTP disabled for agent',
+    data: { id: agent._id, emailOtpEnabled: agent.emailOtpEnabled },
+  });
+}));
+
 router.delete('/agents/:id', asyncHandler(async (req: AuthRequest, res) => {
   const dealer = await User.findOne({ _id: req.params.id, role: 'agent' });
   if (!dealer) throw new AppError('Agent not found');
@@ -749,6 +769,26 @@ router.patch('/resellers/:id/complaint-access', asyncHandler(async (req: AuthReq
     success: true,
     message: complaintEnabled ? 'Complaints enabled for reseller' : 'Complaints disabled for reseller',
     data: { id: reseller._id, complaintEnabled: reseller.complaintEnabled },
+  });
+}));
+
+router.patch('/resellers/:id/email-otp', asyncHandler(async (req: AuthRequest, res) => {
+  const { emailOtpEnabled } = req.body;
+  if (typeof emailOtpEnabled !== 'boolean') {
+    throw new AppError('emailOtpEnabled must be true or false');
+  }
+
+  const reseller = await User.findOne({ _id: req.params.id, role: 'reseller' });
+  if (!reseller) throw new AppError('Reseller not found');
+
+  reseller.emailOtpEnabled = emailOtpEnabled;
+  await reseller.save();
+  await logAudit(req, 'update', 'reseller_email_otp', reseller._id.toString(), { emailOtpEnabled });
+
+  res.json({
+    success: true,
+    message: emailOtpEnabled ? 'Email OTP enabled for reseller' : 'Email OTP disabled for reseller',
+    data: { id: reseller._id, emailOtpEnabled: reseller.emailOtpEnabled },
   });
 }));
 

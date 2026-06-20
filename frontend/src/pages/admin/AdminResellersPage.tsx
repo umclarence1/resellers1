@@ -16,7 +16,7 @@ import AdminRewardModal from '@/components/admin/AdminRewardModal';
 import AdminPasswordConfirm from '@/components/admin/AdminPasswordConfirm';
 import ScrollTable from '@/components/ui/ScrollTable';
 import { MobileDataCard, MobileDataCardList, MobileDataCardRow } from '@/components/ui/MobileDataCard';
-import { Gift, Loader2, MessageSquare, Store, Trash2 } from 'lucide-react';
+import { Gift, Loader2, Mail, MessageSquare, Store, Trash2 } from 'lucide-react';
 
 type ResellerRow = {
   _id: string;
@@ -25,6 +25,7 @@ type ResellerRow = {
   phone: string;
   status: string;
   complaintEnabled?: boolean;
+  emailOtpEnabled?: boolean;
   profitBalance: number;
   totalWithdrawals: number;
   resellerStore?: {
@@ -138,6 +139,19 @@ export default function AdminResellersPage() {
     }
   };
 
+  const toggleEmailOtp = async (id: string, enabled: boolean) => {
+    setUpdatingId(id);
+    setError('');
+    try {
+      await api.patch(`/admin/resellers/${id}/email-otp`, { emailOtpEnabled: enabled });
+      load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update email OTP');
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
   const deleteAccount = async (r: ResellerRow) => {
     const confirmed = window.confirm(
       `Delete ${r.fullName}'s account permanently?\n\nThis cannot be undone. Orders history will remain, but they will no longer be able to log in.`
@@ -166,7 +180,7 @@ export default function AdminResellersPage() {
           {showForm ? 'Cancel' : 'Create Reseller'}
         </Button>
       </div>
-      <p className="text-sm text-gray-400 mb-6">Manage reseller stores, earnings, and complaint access.</p>
+      <p className="text-sm text-gray-400 mb-6">Manage reseller stores, earnings, complaints, and email OTP.</p>
 
       {showForm && (
         <Card className="p-6 mb-6">
@@ -209,6 +223,7 @@ export default function AdminResellersPage() {
               {resellers.map((r) => {
                 const storeActive = r.resellerStore?.isActive !== false;
                 const complaintsAllowed = r.complaintEnabled !== false;
+                const otpEnabled = r.emailOtpEnabled !== false;
                 const busy = updatingId === r._id;
                 return (
                   <MobileDataCard
@@ -236,6 +251,17 @@ export default function AdminResellersPage() {
                         >
                           <MessageSquare className="w-3 h-3" />
                           {complaintsAllowed ? 'Complaints on' : 'Complaints off'}
+                        </ActionChip>
+                        <ActionChip
+                          title={otpEnabled ? 'Disable email OTP' : 'Enable email OTP'}
+                          active={otpEnabled}
+                          activeTone="violet"
+                          inactiveTone="slate"
+                          disabled={busy}
+                          onClick={() => toggleEmailOtp(r._id, !otpEnabled)}
+                        >
+                          <Mail className="w-3 h-3" />
+                          {otpEnabled ? 'OTP on' : 'OTP off'}
                         </ActionChip>
                         <ActionChip
                           title="Send reward"
@@ -289,6 +315,7 @@ export default function AdminResellersPage() {
                 {resellers.map((r) => {
                     const storeActive = r.resellerStore?.isActive !== false;
                     const complaintsAllowed = r.complaintEnabled !== false;
+                    const otpEnabled = r.emailOtpEnabled !== false;
                     const busy = updatingId === r._id;
                     return (
                       <tr key={r._id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50/50">
@@ -321,6 +348,18 @@ export default function AdminResellersPage() {
                             >
                               <MessageSquare className="w-3 h-3" />
                               {complaintsAllowed ? 'Complaints on' : 'Complaints off'}
+                            </ActionChip>
+
+                            <ActionChip
+                              title={otpEnabled ? 'Disable email OTP' : 'Enable email OTP'}
+                              active={otpEnabled}
+                              activeTone="violet"
+                              inactiveTone="slate"
+                              disabled={busy}
+                              onClick={() => toggleEmailOtp(r._id, !otpEnabled)}
+                            >
+                              <Mail className="w-3 h-3" />
+                              {otpEnabled ? 'OTP on' : 'OTP off'}
                             </ActionChip>
 
                             <ActionChip

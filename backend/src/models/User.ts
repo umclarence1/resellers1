@@ -52,6 +52,8 @@ export interface IUser extends Document {
   resellerStore?: IResellerStore;
   agentApi?: IAgentApi;
   complaintEnabled: boolean;
+  /** When false, login/signup skips email OTP (if global role OTP is on). */
+  emailOtpEnabled: boolean;
   isSuperAdmin?: boolean;
   totpEnabled: boolean;
   totpSecretEnc?: string;
@@ -117,6 +119,7 @@ const userSchema = new Schema<IUser>(
     resellerStore: resellerStoreSchema,
     agentApi: agentApiSchema,
     complaintEnabled: { type: Boolean, default: true },
+    emailOtpEnabled: { type: Boolean, default: true },
     isSuperAdmin: { type: Boolean, default: false },
     totpEnabled: { type: Boolean, default: false },
     totpSecretEnc: { type: String, select: false },

@@ -16,7 +16,7 @@ import AdminAgentCustomPricesModal from '@/components/admin/AdminAgentCustomPric
 import AdminPasswordConfirm from '@/components/admin/AdminPasswordConfirm';
 import ActionChip from '@/components/admin/ActionChip';
 import { formatCurrency } from '@/lib/utils';
-import { Gift, Loader2, Trash2, UserCheck, UserX, Wallet, Tags, Key, Check, X } from 'lucide-react';
+import { Gift, Loader2, Mail, Trash2, UserCheck, UserX, Wallet, Tags, Key, Check, X } from 'lucide-react';
 
 type AgentRow = {
   _id: string;
@@ -24,6 +24,7 @@ type AgentRow = {
   email: string;
   phone: string;
   status: string;
+  emailOtpEnabled?: boolean;
   walletBalance?: number;
   apiAccess?: {
     approvalStatus: 'none' | 'pending' | 'approved' | 'rejected';
@@ -114,6 +115,19 @@ export default function AdminAgentsPage() {
       loadAgents();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update Agent');
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
+  const toggleEmailOtp = async (agent: AgentRow, enabled: boolean) => {
+    setUpdatingId(agent._id);
+    setError('');
+    try {
+      await api.patch(`/admin/agents/${agent._id}/email-otp`, { emailOtpEnabled: enabled });
+      loadAgents();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update email OTP');
     } finally {
       setUpdatingId(null);
     }
@@ -222,6 +236,7 @@ export default function AdminAgentsPage() {
               {agents.map((d) => {
                 const busy = updatingId === d._id || apiActionId === d._id;
                 const isActive = d.status === 'active';
+                const otpEnabled = d.emailOtpEnabled !== false;
                 const apiStatus = d.apiAccess?.approvalStatus ?? 'none';
                 return (
                   <tr key={d._id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50/50">
@@ -295,6 +310,18 @@ export default function AdminAgentsPage() {
                         >
                           <Tags className="w-3 h-3" />
                           Prices
+                        </ActionChip>
+
+                        <ActionChip
+                          title={otpEnabled ? 'Disable email OTP' : 'Enable email OTP'}
+                          active={otpEnabled}
+                          activeTone="violet"
+                          inactiveTone="slate"
+                          disabled={busy}
+                          onClick={() => toggleEmailOtp(d, !otpEnabled)}
+                        >
+                          <Mail className="w-3 h-3" />
+                          {otpEnabled ? 'OTP on' : 'OTP off'}
                         </ActionChip>
 
                         <ActionChip
