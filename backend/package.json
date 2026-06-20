@@ -14,6 +14,7 @@
     "test:fulfillment": "npm run build && node --test dist/tests/fulfillmentAndPricing.test.js",
     "test:checker": "npm run build && node --test dist/tests/checkerInventory.test.js",
     "test:sub-reseller": "npm run build && node --test dist/tests/subResellerPricing.test.js",
+    "test:auth-settings": "npm run build && node --test dist/tests/authSettings.test.js",
     "migrate:order-numbers": "npm run build && node dist/scripts/migrate-order-numbers.js",
     "reset:production": "npm run build && node dist/scripts/production-reset.js"
   },
@@ -36,12 +37,12 @@
     "ioredis": "^5.11.1",
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^9.6.3",
-    "multer": "^2.1.1",
-    "nodemailer": "^8.0.10",
+    "multer": "^2.2.0",
+    "nodemailer": "^9.0.1",
     "rate-limit-redis": "^5.0.0",
+    "read-excel-file": "^9.2.0",
     "speakeasy": "^2.0.0",
-    "uuid": "^14.0.0",
-    "xlsx": "^0.18.5"
+    "uuid": "^14.0.0"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
@@ -57,6 +58,7 @@
     "@types/uuid": "^10.0.0",
     "mongodb-memory-server": "^11.2.0",
     "ts-node-dev": "^2.0.0",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "write-excel-file": "^4.1.1"
   }
 }

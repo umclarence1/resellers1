@@ -46,7 +46,8 @@ import {
   getEffectiveMaxPrice,
   getParentAssignableRange,
   getSubResellerDefaultFloor,
-  getSubResellerDefaultMax,
+  computeSubResellerMaxFromFloor,
+  computeInheritedMaxMarkup,
   setSubResellerAssignedPricing,
   setSubResellerDefaultPricing,
   hasParentReseller,
@@ -414,11 +415,10 @@ router.get('/sub-reseller-default-prices', asyncHandler(async (req: AuthRequest,
 
   const mapRow = (pkg: InstanceType<typeof Package>) => {
     const packageId = pkg._id.toString();
-    const { parentCost, maxCeiling } = getParentAssignableRange(parent, packageId, pkg);
+    const { parentCost, maxCeiling, inheritedMarkup } = getParentAssignableRange(parent, packageId, pkg);
     const assignedFloor = getSubResellerDefaultFloor(parent, packageId);
-    const assignedMax = getSubResellerDefaultMax(parent, packageId);
-    const floor = assignedFloor ?? parentCost;
-    const max = assignedMax ?? maxCeiling;
+    const assignedMax =
+      assignedFloor !== undefined ? computeSubResellerMaxFromFloor(assignedFloor, pkg) : undefined;
     return {
       _id: pkg._id,
       network: pkg.network,
@@ -426,11 +426,11 @@ router.get('/sub-reseller-default-prices', asyncHandler(async (req: AuthRequest,
       productType: pkg.productType,
       parentCost,
       maxCeiling,
+      inheritedMarkup,
+      adminCostPrice: pkg.costPrice,
       adminMaxSellingPrice: pkg.maxSellingPrice,
       assignedFloor,
       assignedMax,
-      floor,
-      max,
       profitPerSale:
         assignedFloor !== undefined ? computeResellerProfit(assignedFloor, parentCost) : 0,
       ...resellerProfitRange(parentCost, assignedMax ?? maxCeiling),
@@ -459,19 +459,17 @@ router.get('/sub-reseller-default-prices', asyncHandler(async (req: AuthRequest,
 
 router.put('/sub-reseller-default-prices/:packageId', asyncHandler(async (req: AuthRequest, res) => {
   const floor = req.body.floor ?? req.body.price;
-  const max = req.body.max;
-  if (floor === undefined || floor === null || max === undefined || max === null) {
-    throw new AppError('Floor and max prices are required');
+  if (floor === undefined || floor === null) {
+    throw new AppError('Base price is required');
   }
 
   const pkg = await Package.findById(req.params.packageId);
   if (!pkg) throw new AppError('Package not found');
 
-  await setSubResellerDefaultPricing(
+  const max = await setSubResellerDefaultPricing(
     req.user!._id.toString(),
     pkg._id.toString(),
     Number(floor),
-    Number(max),
     pkg
   );
 
@@ -482,14 +480,15 @@ router.put('/sub-reseller-default-prices/:packageId', asyncHandler(async (req: A
 
   res.json({
     success: true,
-    message: 'Default sub-reseller prices updated',
+    message: 'Default sub-reseller base price updated',
     data: {
       packageId: pkg._id,
       floor: Number(floor),
-      max: Number(max),
+      max,
+      inheritedMarkup: computeInheritedMaxMarkup(pkg),
       parentCost,
       minProfitPerSale: computeResellerProfit(Number(floor), parentCost),
-      maxProfitPerSale: computeResellerProfit(Number(max), parentCost),
+      maxProfitPerSale: computeResellerProfit(max, parentCost),
     },
   });
 }));
@@ -572,11 +571,10 @@ router.get('/sub-resellers/:childId/prices', asyncHandler(async (req: AuthReques
 
   const mapRow = (pkg: InstanceType<typeof Package>) => {
     const packageId = pkg._id.toString();
-    const { parentCost, maxCeiling } = getParentAssignableRange(parent, packageId, pkg);
+    const { parentCost, maxCeiling, inheritedMarkup } = getParentAssignableRange(parent, packageId, pkg);
     const assignedFloor = child.resellerStore!.parentAssignedPrices?.get(packageId);
-    const assignedMax = child.resellerStore!.parentAssignedMaxPrices?.get(packageId);
-    const floor = assignedFloor ?? parentCost;
-    const max = assignedMax ?? maxCeiling;
+    const assignedMax =
+      assignedFloor !== undefined ? computeSubResellerMaxFromFloor(assignedFloor, pkg) : undefined;
     return {
       _id: pkg._id,
       network: pkg.network,
@@ -584,11 +582,11 @@ router.get('/sub-resellers/:childId/prices', asyncHandler(async (req: AuthReques
       productType: pkg.productType,
       parentCost,
       maxCeiling,
+      inheritedMarkup,
+      adminCostPrice: pkg.costPrice,
       adminMaxSellingPrice: pkg.maxSellingPrice,
       assignedFloor,
       assignedMax,
-      floor,
-      max,
       profitPerSale:
         assignedFloor !== undefined ? computeResellerProfit(assignedFloor, parentCost) : 0,
       ...resellerProfitRange(parentCost, assignedMax ?? maxCeiling),
@@ -613,20 +611,18 @@ router.get('/sub-resellers/:childId/prices', asyncHandler(async (req: AuthReques
 
 router.put('/sub-resellers/:childId/prices/:packageId', asyncHandler(async (req: AuthRequest, res) => {
   const floor = req.body.floor ?? req.body.price;
-  const max = req.body.max;
-  if (floor === undefined || floor === null || max === undefined || max === null) {
-    throw new AppError('Floor and max prices are required');
+  if (floor === undefined || floor === null) {
+    throw new AppError('Base price is required');
   }
 
   const pkg = await Package.findById(req.params.packageId);
   if (!pkg) throw new AppError('Package not found');
 
-  await setSubResellerAssignedPricing(
+  const max = await setSubResellerAssignedPricing(
     req.user!._id.toString(),
     String(req.params.childId),
     pkg._id.toString(),
     Number(floor),
-    Number(max),
     pkg
   );
 
@@ -637,14 +633,15 @@ router.put('/sub-resellers/:childId/prices/:packageId', asyncHandler(async (req:
 
   res.json({
     success: true,
-    message: 'Sub-reseller prices updated',
+    message: 'Sub-reseller base price updated',
     data: {
       packageId: pkg._id,
       floor: Number(floor),
-      max: Number(max),
+      max,
+      inheritedMarkup: computeInheritedMaxMarkup(pkg),
       parentCost,
       minProfitPerSale: computeResellerProfit(Number(floor), parentCost),
-      maxProfitPerSale: computeResellerProfit(Number(max), parentCost),
+      maxProfitPerSale: computeResellerProfit(max, parentCost),
     },
   });
 }));

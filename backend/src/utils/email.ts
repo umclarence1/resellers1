@@ -1,6 +1,7 @@
 import nodemailer from 'nodemailer';
 import { env } from '../config/env';
 import { PLATFORM_NAME } from '../config/brand';
+import { AppError } from '../middleware/errorHandler';
 
 function smtpPort(): number {
   if (process.env.SMTP_PORT) return env.smtp.port;
@@ -46,6 +47,11 @@ function resendFromAddress(): string {
   const from = env.smtp.from;
   if (from && !from.includes('@gmail.com') && !from.includes('@googlemail.com')) {
     return from;
+  }
+  if (env.nodeEnv === 'production') {
+    throw new Error(
+      'RESEND_FROM must be a verified domain sender (e.g. TopDealsGH <noreply@topdealsgh.com>)'
+    );
   }
   return `${PLATFORM_NAME} <onboarding@resend.dev>`;
 }
@@ -103,6 +109,11 @@ async function dispatchPriorityEmail(payload: MailPayload): Promise<void> {
     await sendViaResend(payload);
     return;
   }
+  if (process.env.VERCEL && env.smtp.host.includes('gmail')) {
+    console.warn(
+      '[Email] Gmail SMTP on Vercel is unreliable for OTP delivery — set RESEND_API_KEY + RESEND_FROM in production.'
+    );
+  }
   await sendViaSmtp(payload);
 }
 
@@ -117,9 +128,9 @@ async function sendWithOtpRetry(label: string, to: string, send: () => Promise<v
   }
 }
 
-export class EmailDeliveryError extends Error {
+export class EmailDeliveryError extends AppError {
   constructor(message = 'Could not send verification email. Please try again in a moment.') {
-    super(message);
+    super(message, 503);
     this.name = 'EmailDeliveryError';
   }
 }

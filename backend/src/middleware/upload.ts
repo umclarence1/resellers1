@@ -37,9 +37,17 @@ const storage = multer.diskStorage({
   },
 });
 
+const uploadLimits: multer.Options['limits'] = {
+  fileSize: env.maxFileSize,
+  files: 1,
+  fields: 5,
+  fieldNameSize: 100,
+  fieldSize: 1024,
+};
+
 export const upload = multer({
   storage,
-  limits: { fileSize: env.maxFileSize, files: 1 },
+  limits: uploadLimits,
   fileFilter: (_req, file, cb) => {
     if (MIME_TO_EXT[file.mimetype]) {
       cb(null, true);
@@ -51,7 +59,7 @@ export const upload = multer({
 
 export const uploadSpreadsheet = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: env.maxFileSize, files: 1 },
+  limits: uploadLimits,
   fileFilter: (_req, file, cb) => {
     const allowed = [
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',

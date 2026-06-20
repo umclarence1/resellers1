@@ -299,7 +299,7 @@ export default function AdminPackagesPage() {
           <div>
             <h2 className="text-sm font-semibold text-gray-900">MTN AFA Registration stock</h2>
             <p className="text-xs text-gray-500 mt-1">
-              Toggle availability for agents and reseller stores (GHS 15 base price).
+              Toggle availability for agents and reseller stores. Edit AFA prices in the table below.
             </p>
           </div>
           {afaStock && (

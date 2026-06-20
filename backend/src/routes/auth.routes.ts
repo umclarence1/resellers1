@@ -21,7 +21,7 @@ import {
   roleRequiresMfa,
   verifyTotpCode,
 } from '../services/totpService';
-import { createAndSendOtp, verifyOtp, incrementOtpAttempts } from '../utils/otp';
+import { createAndSendOtp, sendAuthOtpOrFail, verifyOtp, incrementOtpAttempts } from '../utils/otp';
 import { signAccessToken } from '../utils/jwt';
 import { EmailDeliveryError, sendPasswordResetEmail } from '../utils/email';
 import { getCanonicalFrontendUrl } from '../config/urls';
@@ -42,6 +42,8 @@ import {
 import { buildAuthUserProfile } from '../services/performanceService';
 import { validatePasswordStrength } from '../utils/password';
 import { activateResellerStore } from '../services/resellerOnboardingService';
+import { createResellerAccount } from '../services/resellerAccountService';
+import { isRoleEmailOtpEnabled, shouldSkipEmailOtpForUser } from '../services/settingsService';
 import { rejectFields } from '../middleware/rejectFields';
 import { canAcceptSubResellerSignup } from '../services/resellerStoreReadinessService';
 import {
@@ -98,6 +100,26 @@ const issueAuthSession = async (user: InstanceType<typeof User>) => {
 const isLoginLocked = (user: InstanceType<typeof User>) =>
   user.loginLockedUntil != null && user.loginLockedUntil > new Date();
 
+/** Pending signup: resend OTP or auto-activate when OTP is disabled. Active account: ask user to log in. */
+async function handleExistingRegistrationEmail(
+  existing: InstanceType<typeof User>,
+  email: string
+): Promise<'otp_sent' | 'activated'> {
+  if (existing.status === 'pending') {
+    if (await shouldSkipEmailOtpForUser(existing)) {
+      activateResellerStore(existing);
+      await existing.save();
+      return 'activated';
+    }
+    await sendAuthOtpOrFail(email);
+    return 'otp_sent';
+  }
+  throw new AppError(
+    'An account with this email already exists. Please log in or use Forgot Password.',
+    409
+  );
+}
+
 const recordFailedLogin = async (user: InstanceType<typeof User> | null, email: string, ip?: string) => {
   if (!user) {
     await logSecurityEvent({
@@ -148,53 +170,45 @@ router.post(
 
     const existing = await User.findOne({ email: email.toLowerCase() });
     if (existing) {
+      const outcome = await handleExistingRegistrationEmail(existing, email);
+      if (outcome === 'activated') {
+        const result = await issueAuthSession(existing);
+        res.status(201).json({
+          success: true,
+          message: 'Account activated. You are now signed in.',
+          data: { ...result, requiresOtp: false },
+        });
+        return;
+      }
       res.status(201).json({
         success: true,
-        message: 'If registration succeeds, an OTP will be sent to your email.',
+        message: 'Verification code sent. Please check your email (and spam folder).',
         data: { email: email.toLowerCase(), requiresOtp: true },
       });
       return;
     }
 
-    const hashedPassword = await bcrypt.hash(password, 12);
-    const slug = slugify(fullName) + '-' + Date.now().toString(36);
+    const skipOtp = env.devSkipOtp || !(await isRoleEmailOtpEnabled('reseller'));
 
-    const user = await User.create({
+    const user = await createResellerAccount({
       fullName,
-      email: email.toLowerCase(),
+      email,
       phone,
-      password: hashedPassword,
-      role: 'reseller',
-      status: 'pending',
-      resellerStore: {
-        storeName: fullName + "'s Store",
-        slug,
-        phone,
-        whatsapp: phone,
-        supportEmail: email.toLowerCase(),
-        isActive: true,
-        isVerified: false,
-        referralCode: generateReferralCode(),
-        customPrices: {},
-      },
+      password,
+      activateImmediately: skipOtp,
     });
 
-    await Wallet.create({ userId: user._id });
-
-    if (env.devSkipOtp) {
-      user.status = 'active';
-      activateResellerStore(user);
-      await user.save();
+    if (skipOtp) {
       const result = await issueAuthSession(user);
       res.status(201).json({
         success: true,
-        message: 'Registration successful (dev mode)',
+        message: 'Registration successful',
         data: { ...result, requiresOtp: false },
       });
       return;
     }
 
-    await createAndSendOtp(email);
+    await sendAuthOtpOrFail(email);
 
     res.status(201).json({
       success: true,
@@ -270,9 +284,19 @@ router.post(
 
     const existing = await User.findOne({ email: email.toLowerCase() });
     if (existing) {
+      const outcome = await handleExistingRegistrationEmail(existing, email);
+      if (outcome === 'activated') {
+        const result = await issueAuthSession(existing);
+        res.status(201).json({
+          success: true,
+          message: 'Account activated. You are now signed in.',
+          data: { ...result, requiresOtp: false },
+        });
+        return;
+      }
       res.status(201).json({
         success: true,
-        message: 'If registration succeeds, an OTP will be sent to your email.',
+        message: 'Verification code sent. Please check your email (and spam folder).',
         data: { email: email.toLowerCase(), requiresOtp: true },
       });
       return;
@@ -317,20 +341,22 @@ router.post(
 
     await Wallet.create({ userId: user._id });
 
-    if (env.devSkipOtp) {
+    const skipOtp = env.devSkipOtp || !(await isRoleEmailOtpEnabled('reseller'));
+
+    if (skipOtp) {
       user.status = 'active';
       activateResellerStore(user);
       await user.save();
       const result = await issueAuthSession(user);
       res.status(201).json({
         success: true,
-        message: 'Registration successful (dev mode)',
+        message: 'Registration successful',
         data: { ...result, requiresOtp: false },
       });
       return;
     }
 
-    await createAndSendOtp(email);
+    await sendAuthOtpOrFail(email);
 
     res.status(201).json({
       success: true,
@@ -378,25 +404,30 @@ router.post(
     user.loginLockedUntil = undefined;
     await user.save();
 
-    // Dev mode: skip OTP so dashboards can be built without email integration
-    if (env.devSkipOtp) {
+    // Skip email OTP when dev flag or role OTP is disabled in admin settings
+    if (await shouldSkipEmailOtpForUser(user)) {
       user.lastLogin = new Date();
       if (user.status === 'pending' && user.role === 'reseller') {
         user.status = 'active';
+        activateResellerStore(user);
       }
       await user.save();
       const result = await issueAuthSession(user);
       res.json({
         success: true,
-        message: 'Login successful (dev mode — OTP skipped)',
+        message: 'Login successful',
         data: { ...result, requiresOtp: false },
       });
       return;
     }
 
     const prefersTotp = user.totpEnabled === true;
-    if (!prefersTotp || roleRequiresMfa(user.role)) {
-      void createAndSendOtp(email);
+    if (!prefersTotp) {
+      await sendAuthOtpOrFail(email);
+    } else if (roleRequiresMfa(user.role)) {
+      void createAndSendOtp(email).catch((err) => {
+        console.error('[Login backup OTP email failed]', email, err instanceof Error ? err.message : err);
+      });
     }
 
     res.json({
@@ -589,7 +620,7 @@ router.post(
 
     const user = await User.findOne({ email: email.toLowerCase() });
     if (user) {
-      await createAndSendOtp(email, { waitForEmail: true });
+      await sendAuthOtpOrFail(email);
     }
     res.json({ success: true, message: 'If an account exists, a new OTP has been sent.' });
   })

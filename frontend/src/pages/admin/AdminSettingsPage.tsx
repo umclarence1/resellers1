@@ -54,6 +54,8 @@ type SettingsData = {
   totalOwed: number;
   poolShortfall: number;
   recommendedPoolTopUp: number;
+  resellerEmailOtpEnabled: boolean;
+  agentEmailOtpEnabled: boolean;
 };
 
 const defaultSettings: SettingsData = {
@@ -67,6 +69,8 @@ const defaultSettings: SettingsData = {
   totalOwed: 0,
   poolShortfall: 0,
   recommendedPoolTopUp: 0,
+  resellerEmailOtpEnabled: true,
+  agentEmailOtpEnabled: true,
 };
 
 const AFA_ROUTE_OPTIONS: { value: AfaFulfillmentRoute; label: string }[] = [
@@ -113,6 +117,8 @@ function normalizeSettings(data: SettingsApiData): SettingsData {
     totalOwed: Number(data.totalOwed) || 0,
     poolShortfall: Number(data.poolShortfall) || 0,
     recommendedPoolTopUp: Number(data.recommendedPoolTopUp) || 0,
+    resellerEmailOtpEnabled: data.resellerEmailOtpEnabled !== false,
+    agentEmailOtpEnabled: data.agentEmailOtpEnabled !== false,
   };
 }
 
@@ -167,6 +173,8 @@ export default function AdminSettingsPage() {
   const [form, setForm] = useState({
     paystackChargePercent: '2',
     minWithdrawal: '30',
+    resellerEmailOtpEnabled: true,
+    agentEmailOtpEnabled: true,
   });
   const [depositAmount, setDepositAmount] = useState('');
   const [depositNote, setDepositNote] = useState('');
@@ -204,6 +212,8 @@ export default function AdminSettingsPage() {
       setForm({
         paystackChargePercent: String(data.paystackChargePercent),
         minWithdrawal: String(data.minWithdrawal),
+        resellerEmailOtpEnabled: data.resellerEmailOtpEnabled,
+        agentEmailOtpEnabled: data.agentEmailOtpEnabled,
       });
     } else {
       errors.push(
@@ -298,6 +308,8 @@ export default function AdminSettingsPage() {
       await api.put('/admin/settings', {
         paystackChargePercent: parseFloat(form.paystackChargePercent),
         minWithdrawal: parseFloat(form.minWithdrawal),
+        resellerEmailOtpEnabled: form.resellerEmailOtpEnabled,
+        agentEmailOtpEnabled: form.agentEmailOtpEnabled,
         adminOtp,
       });
       setMessage('Platform settings saved.');
@@ -809,6 +821,32 @@ export default function AdminSettingsPage() {
                 value={form.minWithdrawal}
                 onChange={(e) => setForm((f) => ({ ...f, minWithdrawal: e.target.value }))}
               />
+
+              <div className="rounded-lg border border-gray-200 p-4 space-y-3">
+                <h3 className="text-sm font-semibold text-gray-900">Email OTP (login &amp; signup)</h3>
+                <p className="text-xs text-gray-500">
+                  When off, resellers or agents sign in with password only — no email verification code.
+                </p>
+                <label className="flex items-center justify-between gap-3 text-sm text-gray-700 cursor-pointer">
+                  <span>Require reseller email OTP</span>
+                  <input
+                    type="checkbox"
+                    checked={form.resellerEmailOtpEnabled}
+                    onChange={(e) => setForm((f) => ({ ...f, resellerEmailOtpEnabled: e.target.checked }))}
+                    className="h-4 w-4 rounded border-gray-300"
+                  />
+                </label>
+                <label className="flex items-center justify-between gap-3 text-sm text-gray-700 cursor-pointer">
+                  <span>Require agent email OTP</span>
+                  <input
+                    type="checkbox"
+                    checked={form.agentEmailOtpEnabled}
+                    onChange={(e) => setForm((f) => ({ ...f, agentEmailOtpEnabled: e.target.checked }))}
+                    className="h-4 w-4 rounded border-gray-300"
+                  />
+                </label>
+              </div>
+
               <AdminPasswordConfirm value={adminOtp} onChange={setAdminOtp} />
               <Button type="submit" disabled={saving}>
                 {saving ? 'Saving...' : 'Save settings'}

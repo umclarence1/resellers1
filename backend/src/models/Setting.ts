@@ -49,6 +49,11 @@ export interface ICheckerSettings {
   wassce: ICheckerTypeSettings;
 }
 
+export interface IAuthSettings {
+  resellerEmailOtpEnabled: boolean;
+  agentEmailOtpEnabled: boolean;
+}
+
 export interface ISetting extends Document {
   afaSettings?: IAfaSettings;
   checkerSettings?: ICheckerSettings;
@@ -58,6 +63,7 @@ export interface ISetting extends Document {
   withdrawalPoolBalance: number;
   totalPoolDeposits: number;
   complaintSettings: IComplaintSettings;
+  authSettings?: IAuthSettings;
   referralSettings: IReferralSettings;
   fulfillmentSettings: IFulfillmentSettings;
   serviceImages: IServiceImage[];
@@ -95,6 +101,10 @@ const settingSchema = new Schema<ISetting>(
       userOverrides: { type: Map, of: Boolean, default: {} },
       activeNotice: String,
       noticeOverridesComplaints: { type: Boolean, default: false },
+    },
+    authSettings: {
+      resellerEmailOtpEnabled: { type: Boolean, default: true },
+      agentEmailOtpEnabled: { type: Boolean, default: true },
     },
     referralSettings: {
       commissionType: { type: String, enum: ['fixed', 'percentage'], default: 'fixed' },

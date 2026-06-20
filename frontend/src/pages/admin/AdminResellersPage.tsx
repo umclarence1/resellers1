@@ -3,13 +3,20 @@ import { useAuth } from '@/lib/auth-context';
 import { api } from '@/lib/api';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { Card } from '@/components/ui/Card';
+import Button from '@/components/ui/Button';
+import Input from '@/components/ui/Input';
+import PasswordInput from '@/components/ui/PasswordInput';
+import FormAlert from '@/components/ui/FormAlert';
+import { validatePasswordPolicy } from '@/lib/password-strength';
+import { runValidators, v } from '@/lib/form-validation';
 import { formatCurrency } from '@/lib/utils';
 import { useNavigate } from 'react-router-dom';
 import ActionChip from '@/components/admin/ActionChip';
-import { Gift, Loader2, MessageSquare, Store, Trash2 } from 'lucide-react';
 import AdminRewardModal from '@/components/admin/AdminRewardModal';
+import AdminPasswordConfirm from '@/components/admin/AdminPasswordConfirm';
 import ScrollTable from '@/components/ui/ScrollTable';
 import { MobileDataCard, MobileDataCardList, MobileDataCardRow } from '@/components/ui/MobileDataCard';
+import { Gift, Loader2, MessageSquare, Store, Trash2 } from 'lucide-react';
 
 type ResellerRow = {
   _id: string;
@@ -31,6 +38,11 @@ export default function AdminResellersPage() {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
   const [resellers, setResellers] = useState<ResellerRow[]>([]);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ fullName: '', email: '', phone: '', password: '', adminOtp: '' });
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [formError, setFormError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   const [pageLoading, setPageLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [rewardTarget, setRewardTarget] = useState<{ id: string; fullName: string } | null>(null);
@@ -56,6 +68,49 @@ export default function AdminResellersPage() {
   useEffect(() => {
     if (user?.role === 'admin') load();
   }, [user]);
+
+  const updateField = (field: keyof typeof form, value: string) => {
+    setForm((prev) => ({ ...prev, [field]: value }));
+    if (fieldErrors[field]) setFieldErrors((prev) => ({ ...prev, [field]: '' }));
+    if (formError) setFormError('');
+  };
+
+  const handleCreate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormError('');
+    const errors = runValidators(form, {
+      fullName: [v.required('Full name')],
+      email: [v.required('Email'), v.email],
+      phone: [v.required('Phone'), v.phone],
+      password: [v.required('Password')],
+    });
+    setFieldErrors(errors);
+    if (Object.keys(errors).length) return;
+
+    const passwordError = validatePasswordPolicy(form.password);
+    if (passwordError) {
+      setFormError(passwordError);
+      return;
+    }
+    if (!/^\d{6}$/.test(form.adminOtp)) {
+      setFieldErrors((prev) => ({ ...prev, adminOtp: 'Enter the 6-digit verification code from your email' }));
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const { adminOtp, ...resellerData } = form;
+      await api.post('/admin/resellers', { ...resellerData, adminOtp });
+      setShowForm(false);
+      setForm({ fullName: '', email: '', phone: '', password: '', adminOtp: '' });
+      setFieldErrors({});
+      load();
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Failed to create reseller');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const toggleStore = async (id: string) => {
     setUpdatingId(id);
@@ -105,8 +160,36 @@ export default function AdminResellersPage() {
 
   return (
     <DashboardLayout role="admin">
-      <h1 className="text-xl sm:text-2xl font-bold text-white mb-1">Resellers</h1>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-2">
+        <h1 className="text-xl sm:text-2xl font-bold text-white">Resellers</h1>
+        <Button onClick={() => setShowForm(!showForm)} className="w-full sm:w-auto shrink-0">
+          {showForm ? 'Cancel' : 'Create Reseller'}
+        </Button>
+      </div>
       <p className="text-sm text-gray-400 mb-6">Manage reseller stores, earnings, and complaint access.</p>
+
+      {showForm && (
+        <Card className="p-6 mb-6">
+          <form noValidate onSubmit={handleCreate} className="grid sm:grid-cols-2 gap-4">
+            <Input label="Full Name" value={form.fullName} error={fieldErrors.fullName} onChange={(e) => updateField('fullName', e.target.value)} />
+            <Input label="Email" type="email" value={form.email} error={fieldErrors.email} onChange={(e) => updateField('email', e.target.value)} />
+            <Input label="Phone" value={form.phone} error={fieldErrors.phone} onChange={(e) => updateField('phone', e.target.value)} placeholder="0XXXXXXXXX" />
+            <PasswordInput label="Reseller password" value={form.password} error={fieldErrors.password} onChange={(e) => updateField('password', e.target.value)} showStrength />
+            <AdminPasswordConfirm
+              className="sm:col-span-2"
+              value={form.adminOtp}
+              onChange={(value) => updateField('adminOtp', value)}
+              error={fieldErrors.adminOtp}
+            />
+            <div className="sm:col-span-2 space-y-3">
+              <FormAlert message={formError} />
+              <Button type="submit" loading={submitting} disabled={submitting} className="w-full sm:w-auto">
+                Create Reseller
+              </Button>
+            </div>
+          </form>
+        </Card>
+      )}
 
       {error && (
         <p className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 p-3 rounded-lg mb-4">{error}</p>

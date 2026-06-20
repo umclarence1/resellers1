@@ -19,22 +19,7 @@ export async function ensureAfaPackage(): Promise<void> {
       existing.productType = 'afa';
       changed = true;
     }
-    if (existing.agentPrice !== AFA_BASE_PRICE) {
-      existing.agentPrice = AFA_BASE_PRICE;
-      changed = true;
-    }
-    if (existing.resellerBasePrice !== AFA_BASE_PRICE) {
-      existing.resellerBasePrice = AFA_BASE_PRICE;
-      changed = true;
-    }
-    if (existing.costPrice !== AFA_BASE_PRICE) {
-      existing.costPrice = AFA_BASE_PRICE;
-      changed = true;
-    }
-    if (existing.isEnabled !== true) {
-      existing.isEnabled = true;
-      changed = true;
-    }
+    // Do not reset admin-edited prices on startup (matches checker package migration).
     if (changed) await existing.save();
     return;
   }

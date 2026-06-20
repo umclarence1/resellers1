@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { Otp } from '../models/Otp';
-import { sendOtpEmail } from './email';
+import { EmailDeliveryError, sendOtpEmail } from './email';
 
 export const generateOtpCode = (): string => {
   return crypto.randomInt(100000, 1000000).toString();
@@ -36,6 +36,17 @@ export const createAndSendOtp = async (
   void emailTask.catch((err) => {
     console.error('[OTP email failed]', normalized, err instanceof Error ? err.message : err);
   });
+};
+
+/** Registration/login paths that must confirm delivery before telling the user an OTP was sent. */
+export const sendAuthOtpOrFail = async (email: string): Promise<void> => {
+  try {
+    await createAndSendOtp(email, { waitForEmail: true });
+  } catch (err) {
+    if (err instanceof EmailDeliveryError) throw err;
+    console.error('[OTP email failed]', email.toLowerCase(), err instanceof Error ? err.message : err);
+    throw new EmailDeliveryError();
+  }
 };
 
 export const verifyOtp = async (email: string, code: string): Promise<boolean> => {

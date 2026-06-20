@@ -3,9 +3,24 @@ import { IPackage } from '../models/Package';
 import { IUser, User } from '../models/User';
 import { IUplineProfit } from '../models/Order';
 import { AppError } from '../middleware/errorHandler';
-import { slugify, isValidStoreSlug } from '../utils/helpers';
+import { roundMoney, slugify, isValidStoreSlug } from '../utils/helpers';
 import { getCustomPrice } from './resellerStoreReadinessService';
 import { computeResellerProfit } from './resellerProfitService';
+
+/** Admin markup passed down the entire reseller chain (max sell − API cost). */
+export function computeInheritedMaxMarkup(
+  pkg: Pick<IPackage, 'costPrice' | 'maxSellingPrice'>
+): number {
+  return roundMoney(Math.max(0, pkg.maxSellingPrice - pkg.costPrice));
+}
+
+/** Sub-reseller max = assigned base + inherited markup (same spread admin gave the parent). */
+export function computeSubResellerMaxFromFloor(
+  floor: number,
+  pkg: Pick<IPackage, 'costPrice' | 'maxSellingPrice'>
+): number {
+  return roundMoney(floor + computeInheritedMaxMarkup(pkg));
+}
 
 const MAX_UPLINE_DEPTH = 32;
 
@@ -51,14 +66,16 @@ export function getEffectiveBasePrice(
   return assigned ?? pkg.resellerBasePrice;
 }
 
-/** Cascading max: parent-assigned ceiling, else own sell price, else admin max. */
+/** Cascading max: sub-reseller base + inherited markup, else own sell price, else admin max. */
 export function getEffectiveMaxPrice(
   user: IUser,
   packageId: string,
-  pkg: Pick<IPackage, 'maxSellingPrice'>
+  pkg: Pick<IPackage, 'costPrice' | 'maxSellingPrice'>
 ): number {
-  const assignedMax = getParentAssignedMaxPrice(user, packageId);
-  if (assignedMax !== undefined) return assignedMax;
+  const assignedFloor = getParentAssignedPrice(user, packageId);
+  if (assignedFloor !== undefined) {
+    return computeSubResellerMaxFromFloor(assignedFloor, pkg);
+  }
 
   const ownSell = getCustomPrice(user, packageId);
   if (ownSell !== undefined) return ownSell;
@@ -69,27 +86,40 @@ export function getEffectiveMaxPrice(
 export function getParentAssignableRange(
   parent: IUser,
   packageId: string,
-  pkg: Pick<IPackage, 'resellerBasePrice' | 'maxSellingPrice'>
-): { parentCost: number; maxCeiling: number } {
+  pkg: Pick<IPackage, 'resellerBasePrice' | 'costPrice' | 'maxSellingPrice'>
+): { parentCost: number; maxCeiling: number; inheritedMarkup: number } {
   const parentCost = getEffectiveBasePrice(parent, packageId, pkg);
-  const maxCeiling = Math.min(pkg.maxSellingPrice, getEffectiveMaxPrice(parent, packageId, pkg));
-  return { parentCost, maxCeiling };
+  const maxCeiling = getEffectiveMaxPrice(parent, packageId, pkg);
+  return {
+    parentCost,
+    maxCeiling,
+    inheritedMarkup: computeInheritedMaxMarkup(pkg),
+  };
 }
 
+export function validateSubResellerFloor(
+  floor: number,
+  parentCost: number,
+  maxCeiling: number
+): void {
+  if (floor < parentCost) {
+    throw new AppError(`Base price cannot be below your cost of GHS ${parentCost}`);
+  }
+  if (floor > maxCeiling) {
+    throw new AppError(`Base price cannot exceed your maximum selling price of GHS ${maxCeiling}`);
+  }
+}
+
+/** @deprecated Sub-reseller max is derived from floor + inherited markup */
 export function validateFloorMaxRange(
   floor: number,
   max: number,
   parentCost: number,
   maxCeiling: number
 ): void {
-  if (floor < parentCost) {
-    throw new AppError(`Floor cannot be below your cost of GHS ${parentCost}`);
-  }
+  validateSubResellerFloor(floor, parentCost, maxCeiling);
   if (max < floor) {
     throw new AppError('Max price cannot be below floor price');
-  }
-  if (max > maxCeiling) {
-    throw new AppError(`Max price cannot exceed GHS ${maxCeiling}`);
   }
 }
 
@@ -195,14 +225,14 @@ export async function setSubResellerDefaultPricing(
   parentId: string,
   packageId: string,
   floor: number,
-  max: number,
-  pkg: Pick<IPackage, 'resellerBasePrice' | 'maxSellingPrice'>
-): Promise<void> {
+  pkg: Pick<IPackage, 'resellerBasePrice' | 'costPrice' | 'maxSellingPrice'>
+): Promise<number> {
   const parent = await User.findOne({ _id: parentId, role: 'reseller' });
   if (!parent?.resellerStore) throw new AppError('Store not found', 404);
 
   const { parentCost, maxCeiling } = getParentAssignableRange(parent, packageId, pkg);
-  validateFloorMaxRange(floor, max, parentCost, maxCeiling);
+  validateSubResellerFloor(floor, parentCost, maxCeiling);
+  const max = computeSubResellerMaxFromFloor(floor, pkg);
 
   const floors = ensureMap(parent.resellerStore, 'subResellerDefaultFloors');
   const maxes = ensureMap(parent.resellerStore, 'subResellerDefaultMaxes');
@@ -211,6 +241,7 @@ export async function setSubResellerDefaultPricing(
   parent.markModified('resellerStore.subResellerDefaultFloors');
   parent.markModified('resellerStore.subResellerDefaultMaxes');
   await parent.save();
+  return max;
 }
 
 export async function setSubResellerAssignedPricing(
@@ -218,9 +249,8 @@ export async function setSubResellerAssignedPricing(
   childId: string,
   packageId: string,
   floor: number,
-  max: number,
-  pkg: Pick<IPackage, 'resellerBasePrice' | 'maxSellingPrice'>
-): Promise<void> {
+  pkg: Pick<IPackage, 'resellerBasePrice' | 'costPrice' | 'maxSellingPrice'>
+): Promise<number> {
   const [parent, child] = await Promise.all([
     User.findOne({ _id: parentId, role: 'reseller' }),
     assertDirectChild(parentId, childId),
@@ -230,7 +260,8 @@ export async function setSubResellerAssignedPricing(
   if (!child.resellerStore) throw new AppError('Sub-reseller store not found', 404);
 
   const { parentCost, maxCeiling } = getParentAssignableRange(parent, packageId, pkg);
-  validateFloorMaxRange(floor, max, parentCost, maxCeiling);
+  validateSubResellerFloor(floor, parentCost, maxCeiling);
+  const max = computeSubResellerMaxFromFloor(floor, pkg);
 
   const floors = ensureMap(child.resellerStore, 'parentAssignedPrices');
   const maxes = ensureMap(child.resellerStore, 'parentAssignedMaxPrices');
@@ -239,6 +270,7 @@ export async function setSubResellerAssignedPricing(
   child.markModified('resellerStore.parentAssignedPrices');
   child.markModified('resellerStore.parentAssignedMaxPrices');
   await child.save();
+  return max;
 }
 
 /** @deprecated Use setSubResellerAssignedPricing with floor + max */
@@ -247,14 +279,9 @@ export async function setSubResellerAssignedPrice(
   childId: string,
   packageId: string,
   price: number,
-  pkg: Pick<IPackage, 'resellerBasePrice' | 'maxSellingPrice'>
+  pkg: Pick<IPackage, 'resellerBasePrice' | 'costPrice' | 'maxSellingPrice'>
 ): Promise<void> {
-  const max = getEffectiveMaxPrice(
-    (await User.findOne({ _id: parentId, role: 'reseller' }))!,
-    packageId,
-    pkg
-  );
-  await setSubResellerAssignedPricing(parentId, childId, packageId, price, max, pkg);
+  await setSubResellerAssignedPricing(parentId, childId, packageId, price, pkg);
 }
 
 export function copySubResellerTemplateToChild(parent: IUser, child: IUser): void {
@@ -266,14 +293,19 @@ export function copySubResellerTemplateToChild(parent: IUser, child: IUser): voi
   const floors = ensureMap(child.resellerStore, 'parentAssignedPrices');
   const maxes = ensureMap(child.resellerStore, 'parentAssignedMaxPrices');
 
+  const applyFloor = (id: string, floorValue: number) => {
+    floors.set(id, floorValue);
+  };
+
   if (templateFloors instanceof Map) {
-    for (const [id, value] of templateFloors) floors.set(id, value);
+    for (const [id, value] of templateFloors) applyFloor(id, value);
   } else if (templateFloors) {
     for (const [id, value] of Object.entries(templateFloors as unknown as Record<string, number>)) {
-      floors.set(id, value);
+      applyFloor(id, value);
     }
   }
 
+  // Max prices are derived from floor + inherited markup at read time; copy cached values when present.
   if (templateMaxes instanceof Map) {
     for (const [id, value] of templateMaxes) maxes.set(id, value);
   } else if (templateMaxes) {

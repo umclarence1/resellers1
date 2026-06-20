@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import * as XLSX from 'xlsx';
+import { readSheet } from 'read-excel-file/node';
 import { AppError } from '../middleware/errorHandler';
 import { CheckerType } from '../config/checker';
 import { ResultChecker } from '../models/ResultChecker';
@@ -10,6 +10,8 @@ export type CheckerUploadResult = {
   skippedInvalid: number;
   uploadBatchId: string;
 };
+
+const MAX_SPREADSHEET_ROWS = 10_000;
 
 function normalizeHeader(value: unknown): string {
   return String(value ?? '')
@@ -33,19 +35,37 @@ function parseRow(row: unknown[], serialIdx: number, pinIdx: number): { serial: 
   return { serial, pin };
 }
 
-export function parseCheckerExcel(buffer: Buffer): Array<{ serial: string; pin: string }> {
-  const workbook = XLSX.read(buffer, { type: 'buffer' });
-  const sheetName = workbook.SheetNames[0];
-  if (!sheetName) {
-    throw new AppError('Excel file has no sheets');
+function parseCsvBuffer(buffer: Buffer): unknown[][] {
+  const text = buffer.toString('utf8').replace(/^\uFEFF/, '');
+  const lines = text.split(/\r?\n/).filter((line) => line.trim().length > 0);
+  if (lines.length > MAX_SPREADSHEET_ROWS) {
+    throw new AppError(`CSV file exceeds ${MAX_SPREADSHEET_ROWS} rows`);
   }
-  const sheet = workbook.Sheets[sheetName];
-  const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '' }) as unknown[][];
-  if (rows.length < 2) {
-    throw new AppError('Excel file must contain a header row and at least one data row');
+  return lines.map((line) => line.split(',').map((cell) => cell.trim().replace(/^"|"$/g, '')));
+}
+
+function assertRowLimit(rawRows: unknown[][]): unknown[][] {
+  if (rawRows.length > MAX_SPREADSHEET_ROWS) {
+    throw new AppError(`Spreadsheet exceeds ${MAX_SPREADSHEET_ROWS} rows`);
+  }
+  return rawRows;
+}
+
+export async function parseCheckerExcel(
+  buffer: Buffer,
+  filename?: string
+): Promise<Array<{ serial: string; pin: string }>> {
+  const ext = (filename || '').toLowerCase();
+  const isCsv = ext.endsWith('.csv');
+  const rawRows = isCsv
+    ? parseCsvBuffer(buffer)
+    : assertRowLimit(await readSheet(buffer));
+
+  if (rawRows.length < 2) {
+    throw new AppError('Spreadsheet must contain a header row and at least one data row');
   }
 
-  const headers = (rows[0] || []).map(normalizeHeader);
+  const headers = (rawRows[0] || []).map(normalizeHeader);
   const serialIdx = findColumnIndex(headers, [
     'serial',
     'serialnumber',
@@ -59,12 +79,12 @@ export function parseCheckerExcel(buffer: Buffer): Array<{ serial: string; pin: 
   const pinIdx = findColumnIndex(headers, ['pin', 'pincode', 'pinnumber', 'pinno', 'scratchpin']);
 
   if (serialIdx < 0 || pinIdx < 0) {
-    throw new AppError('Excel must have Serial and PIN columns in the first row');
+    throw new AppError('Spreadsheet must have Serial and PIN columns in the first row');
   }
 
   const parsed: Array<{ serial: string; pin: string }> = [];
-  for (let i = 1; i < rows.length; i++) {
-    const row = rows[i];
+  for (let i = 1; i < rawRows.length; i++) {
+    const row = rawRows[i];
     if (!Array.isArray(row)) continue;
     const item = parseRow(row, serialIdx, pinIdx);
     if (item) parsed.push(item);
@@ -74,9 +94,10 @@ export function parseCheckerExcel(buffer: Buffer): Array<{ serial: string; pin: 
 
 export async function importCheckerInventory(
   type: CheckerType,
-  buffer: Buffer
+  buffer: Buffer,
+  filename?: string
 ): Promise<CheckerUploadResult> {
-  const rows = parseCheckerExcel(buffer);
+  const rows = await parseCheckerExcel(buffer, filename);
   if (rows.length === 0) {
     throw new AppError('No valid checker rows found in file');
   }
@@ -121,7 +142,7 @@ export async function importCheckerInventory(
       const bulkErr = err as { insertedDocs?: unknown[]; writeErrors?: unknown[] };
       if (bulkErr.insertedDocs) {
         imported = bulkErr.insertedDocs.length;
-        skippedDuplicates += (bulkErr.writeErrors?.length ?? 0);
+        skippedDuplicates += bulkErr.writeErrors?.length ?? 0;
       } else {
         throw err;
       }

@@ -57,6 +57,12 @@ export function validateProductionEnv(): void {
     errors.push('RESEND_API_KEY or SMTP_PASS is required for OTP email delivery');
   }
 
+  if (process.env.RESEND_API_KEY?.trim() && !process.env.RESEND_FROM?.trim()) {
+    errors.push(
+      'RESEND_FROM must be set when using Resend (verified domain, e.g. TopDealsGH <noreply@topdealsgh.com>)'
+    );
+  }
+
   if (errors.length) {
     throw new Error(`Production environment misconfiguration:\n- ${errors.join('\n- ')}`);
   }

@@ -6,9 +6,9 @@ import DashboardLayout from '@/components/layout/DashboardLayout';
 import Button from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { formatCurrency, cn } from '@/lib/utils';
-import { Loader2, ArrowLeft } from 'lucide-react';
-import { computeResellerProfit } from '@/lib/reseller-profit';
+import { computeResellerProfit, computeSubResellerMaxFromFloor } from '@/lib/reseller-profit';
 import { buildResellerStoreUrl } from '@/lib/reseller-store-ref';
+import { Loader2, ArrowLeft } from 'lucide-react';
 import {
   PanelTable,
   PanelTableHeader,
@@ -25,6 +25,9 @@ interface PriceRow {
   bundleSize: string;
   parentCost: number;
   maxCeiling: number;
+  inheritedMarkup: number;
+  adminCostPrice: number;
+  adminMaxSellingPrice: number;
   assignedFloor?: number;
   assignedMax?: number;
   minProfitPerSale?: number;
@@ -39,6 +42,17 @@ interface TemplateMeta {
   signupReason?: string;
 }
 
+function resolveTheirMax(row: PriceRow, draftFloor: number | undefined): number | undefined {
+  if (draftFloor === undefined || !Number.isFinite(draftFloor)) {
+    return row.assignedMax;
+  }
+  return computeSubResellerMaxFromFloor(
+    draftFloor,
+    row.adminCostPrice,
+    row.adminMaxSellingPrice
+  );
+}
+
 export default function ResellerDefaultSubResellerPricesPage() {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
@@ -51,7 +65,6 @@ export default function ResellerDefaultSubResellerPricesPage() {
   const [error, setError] = useState('');
   const [editing, setEditing] = useState<string | null>(null);
   const [floor, setFloor] = useState('');
-  const [max, setMax] = useState('');
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -83,7 +96,6 @@ export default function ResellerDefaultSubResellerPricesPage() {
     try {
       await api.put(`/reseller/sub-reseller-default-prices/${packageId}`, {
         floor: parseFloat(floor),
-        max: parseFloat(max),
       });
       setEditing(null);
       load();
@@ -97,13 +109,13 @@ export default function ResellerDefaultSubResellerPricesPage() {
   const renderTable = (title: string, rows: PriceRow[]) => (
     <PanelTable>
       <PanelTableHeader title={title} trailing={`${rows.length} items`} />
-      <PanelTableScroll minWidth={680}>
+      <PanelTableScroll minWidth={720}>
         <thead className={panelTableHeadClass}>
           <tr>
             <th className={panelTableTh()}>Bundle</th>
             <th className={panelTableTh()}>Your cost</th>
             <th className={panelTableTh()}>Your max</th>
-            <th className={panelTableTh()}>Their floor</th>
+            <th className={panelTableTh()}>Their base</th>
             <th className={panelTableTh()}>Their max</th>
             <th className={panelTableTh('emerald')}>Your margin</th>
             <th className={panelTableTh()}>Action</th>
@@ -111,14 +123,19 @@ export default function ResellerDefaultSubResellerPricesPage() {
         </thead>
         <tbody>
           {rows.map((p) => {
-            const draftFloor = editing === p._id ? parseFloat(floor) : p.assignedFloor ?? p.parentCost;
-            const draftMax = editing === p._id ? parseFloat(max) : p.assignedMax ?? p.maxCeiling;
-            const minProfit = Number.isFinite(draftFloor)
-              ? computeResellerProfit(draftFloor, p.parentCost)
-              : 0;
-            const maxProfit = Number.isFinite(draftMax)
-              ? computeResellerProfit(draftMax, p.parentCost)
-              : p.maxProfitPerSale ?? 0;
+            const draftFloor =
+              editing === p._id
+                ? parseFloat(floor)
+                : p.assignedFloor;
+            const theirMax = resolveTheirMax(p, draftFloor);
+            const minProfit =
+              draftFloor !== undefined && Number.isFinite(draftFloor)
+                ? computeResellerProfit(draftFloor, p.parentCost)
+                : 0;
+            const maxProfit =
+              theirMax !== undefined && Number.isFinite(theirMax)
+                ? computeResellerProfit(theirMax, p.parentCost)
+                : p.maxProfitPerSale ?? 0;
             return (
               <tr key={p._id} className={panelTableRowClass}>
                 <td className={cn(panelTableCellClass, 'font-medium text-gray-900')}>
@@ -144,21 +161,12 @@ export default function ResellerDefaultSubResellerPricesPage() {
                   )}
                 </td>
                 <td className={panelTableCellClass}>
-                  {editing === p._id ? (
-                    <input
-                      type="number"
-                      step="0.01"
-                      min={p.parentCost}
-                      max={p.maxCeiling}
-                      value={max}
-                      onChange={(e) => setMax(e.target.value)}
-                      className="w-24 px-2 py-1.5 border border-gray-200 rounded-lg text-gray-900 focus:ring-2 focus:ring-gold/50 focus:border-gold outline-none"
-                    />
-                  ) : (
-                    <span className="font-semibold text-violet-700">
-                      {p.assignedMax !== undefined ? formatCurrency(p.assignedMax) : '—'}
-                    </span>
-                  )}
+                  <span className="font-semibold text-violet-700">
+                    {theirMax !== undefined ? formatCurrency(theirMax) : '—'}
+                  </span>
+                  <span className="block text-[10px] text-gray-400">
+                    +{formatCurrency(p.inheritedMarkup)} markup
+                  </span>
                 </td>
                 <td className={panelTableCellClass}>
                   <span className="font-semibold text-emerald-700">
@@ -178,7 +186,6 @@ export default function ResellerDefaultSubResellerPricesPage() {
                       onClick={() => {
                         setEditing(p._id);
                         setFloor(String(p.assignedFloor ?? p.parentCost));
-                        setMax(String(p.assignedMax ?? p.maxCeiling));
                         setError('');
                       }}
                     >
@@ -211,8 +218,8 @@ export default function ResellerDefaultSubResellerPricesPage() {
 
       <h1 className="text-xl sm:text-2xl font-bold text-white mb-1">Default Sub-Reseller Prices</h1>
       <p className="text-sm text-gray-400 mb-6">
-        Set floor and max prices for every product before anyone can register under your store.
-        New resellers receive these ranges automatically.
+        Set the base price for each product before anyone can register under your store. Their maximum
+        selling price is calculated automatically: base + your inherited markup from admin.
       </p>
 
       {meta && (

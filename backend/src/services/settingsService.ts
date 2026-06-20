@@ -1,4 +1,11 @@
-import { Setting, IFulfillmentSettings, FulfillmentNetworkRoute, FulfillmentProvider, AfaFulfillmentRoute } from '../models/Setting';
+import {
+  Setting,
+  IFulfillmentSettings,
+  FulfillmentNetworkRoute,
+  FulfillmentProvider,
+  AfaFulfillmentRoute,
+  IAuthSettings,
+} from '../models/Setting';
 import { Network } from '../models/Package';
 import { User } from '../models/User';
 import { Complaint } from '../models/Complaint';
@@ -38,6 +45,26 @@ const defaultComplaintSettings = () => ({
   userOverrides: new Map<string, boolean>(),
   noticeOverridesComplaints: false,
 });
+
+const defaultAuthSettings = (): IAuthSettings => ({
+  resellerEmailOtpEnabled: true,
+  agentEmailOtpEnabled: true,
+});
+
+export async function isRoleEmailOtpEnabled(role: 'reseller' | 'agent'): Promise<boolean> {
+  const settings = await getSettings();
+  if (role === 'reseller') {
+    return settings.authSettings?.resellerEmailOtpEnabled !== false;
+  }
+  return settings.authSettings?.agentEmailOtpEnabled !== false;
+}
+
+export async function shouldSkipEmailOtpForUser(user: { role: string }): Promise<boolean> {
+  if (process.env.DEV_SKIP_OTP === 'true') return true;
+  if (user.role === 'reseller') return !(await isRoleEmailOtpEnabled('reseller'));
+  if (user.role === 'agent') return !(await isRoleEmailOtpEnabled('agent'));
+  return false;
+}
 
 export function normalizeNetworkRoute(value: unknown): FulfillmentNetworkRoute {
   if (value === true) return 'smartdatahub';
@@ -135,6 +162,10 @@ export const getSettings = async () => {
     dirty = true;
   } else if (!settings.complaintSettings.userOverrides) {
     settings.complaintSettings.userOverrides = new Map();
+    dirty = true;
+  }
+  if (!settings.authSettings) {
+    settings.authSettings = defaultAuthSettings();
     dirty = true;
   }
   if (dirty) await settings.save();

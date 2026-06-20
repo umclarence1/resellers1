@@ -2,10 +2,8 @@ import { IUser } from '../models/User';
 import { Package } from '../models/Package';
 import { AppError } from '../middleware/errorHandler';
 import {
-  getParentAssignedMaxPrice,
   getParentAssignedPrice,
   getSubResellerDefaultFloor,
-  getSubResellerDefaultMax,
   hasParentReseller,
 } from './subResellerPricingService';
 
@@ -43,16 +41,15 @@ export async function getAllSellablePackages() {
   });
 }
 
-function packageHasFloorAndMax(
+function packageHasAssignedBase(
   user: IUser,
   packageId: string,
-  getFloor: (u: IUser, id: string) => number | undefined,
-  getMax: (u: IUser, id: string) => number | undefined
+  getFloor: (u: IUser, id: string) => number | undefined
 ): boolean {
-  return getFloor(user, packageId) !== undefined && getMax(user, packageId) !== undefined;
+  return getFloor(user, packageId) !== undefined;
 }
 
-/** Parent default template: floor + max for every sellable package. */
+/** Parent default template: base price for every sellable package (max is auto-derived). */
 export async function getSubResellerTemplateStatus(user: IUser) {
   const packages = await getAllSellablePackages();
   const missingPackageIds: string[] = [];
@@ -60,12 +57,7 @@ export async function getSubResellerTemplateStatus(user: IUser) {
 
   for (const pkg of packages) {
     const id = pkg._id.toString();
-    const complete = packageHasFloorAndMax(
-      user,
-      id,
-      getSubResellerDefaultFloor,
-      getSubResellerDefaultMax
-    );
+    const complete = packageHasAssignedBase(user, id, getSubResellerDefaultFloor);
     if (complete) configuredCount++;
     else missingPackageIds.push(id);
   }
@@ -76,7 +68,7 @@ export async function getSubResellerTemplateStatus(user: IUser) {
   return { templateReady, configuredCount, requiredCount, missingPackageIds };
 }
 
-/** Child must have floor + max from parent for every sellable package. */
+/** Child must have parent-assigned base for every sellable package (max is auto-derived). */
 export async function getParentAssignedPricingStatus(user: IUser) {
   if (!hasParentReseller(user)) {
     return {
@@ -95,8 +87,7 @@ export async function getParentAssignedPricingStatus(user: IUser) {
   for (const pkg of packages) {
     const id = pkg._id.toString();
     const floor = getParentAssignedPrice(user, id);
-    const max = getParentAssignedMaxPrice(user, id);
-    const complete = floor !== undefined && max !== undefined;
+    const complete = floor !== undefined;
     if (complete) configuredCount++;
     else missingPackageIds.push(id);
   }

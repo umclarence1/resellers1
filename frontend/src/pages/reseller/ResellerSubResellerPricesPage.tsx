@@ -5,8 +5,8 @@ import { api } from '@/lib/api';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import Button from '@/components/ui/Button';
 import { formatCurrency, cn } from '@/lib/utils';
+import { computeResellerProfit, computeSubResellerMaxFromFloor } from '@/lib/reseller-profit';
 import { Loader2, ArrowLeft } from 'lucide-react';
-import { computeResellerProfit } from '@/lib/reseller-profit';
 import {
   PanelTable,
   PanelTableHeader,
@@ -23,6 +23,9 @@ interface PriceRow {
   bundleSize: string;
   parentCost: number;
   maxCeiling: number;
+  inheritedMarkup: number;
+  adminCostPrice: number;
+  adminMaxSellingPrice: number;
   assignedFloor?: number;
   assignedMax?: number;
 }
@@ -32,6 +35,17 @@ interface ChildInfo {
   fullName: string;
   storeName: string;
   slug: string;
+}
+
+function resolveTheirMax(row: PriceRow, draftFloor: number | undefined): number | undefined {
+  if (draftFloor === undefined || !Number.isFinite(draftFloor)) {
+    return row.assignedMax;
+  }
+  return computeSubResellerMaxFromFloor(
+    draftFloor,
+    row.adminCostPrice,
+    row.adminMaxSellingPrice
+  );
 }
 
 export default function ResellerSubResellerPricesPage() {
@@ -47,7 +61,6 @@ export default function ResellerSubResellerPricesPage() {
   const [error, setError] = useState('');
   const [editing, setEditing] = useState<string | null>(null);
   const [floor, setFloor] = useState('');
-  const [max, setMax] = useState('');
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -80,7 +93,6 @@ export default function ResellerSubResellerPricesPage() {
     try {
       await api.put(`/reseller/sub-resellers/${childId}/prices/${packageId}`, {
         floor: parseFloat(floor),
-        max: parseFloat(max),
       });
       setEditing(null);
       load();
@@ -94,13 +106,13 @@ export default function ResellerSubResellerPricesPage() {
   const renderTable = (title: string, rows: PriceRow[]) => (
     <PanelTable>
       <PanelTableHeader title={title} trailing={`${rows.length} items`} />
-      <PanelTableScroll minWidth={680}>
+      <PanelTableScroll minWidth={720}>
         <thead className={panelTableHeadClass}>
           <tr>
             <th className={panelTableTh()}>Bundle</th>
             <th className={panelTableTh()}>Your cost</th>
             <th className={panelTableTh()}>Your max</th>
-            <th className={panelTableTh()}>Their floor</th>
+            <th className={panelTableTh()}>Their base</th>
             <th className={panelTableTh()}>Their max</th>
             <th className={panelTableTh('emerald')}>Your margin</th>
             <th className={panelTableTh()}>Action</th>
@@ -108,14 +120,19 @@ export default function ResellerSubResellerPricesPage() {
         </thead>
         <tbody>
           {rows.map((p) => {
-            const draftFloor = editing === p._id ? parseFloat(floor) : p.assignedFloor ?? p.parentCost;
-            const draftMax = editing === p._id ? parseFloat(max) : p.assignedMax ?? p.maxCeiling;
-            const minProfit = Number.isFinite(draftFloor)
-              ? computeResellerProfit(draftFloor, p.parentCost)
-              : 0;
-            const maxProfit = Number.isFinite(draftMax)
-              ? computeResellerProfit(draftMax, p.parentCost)
-              : 0;
+            const draftFloor =
+              editing === p._id
+                ? parseFloat(floor)
+                : p.assignedFloor;
+            const theirMax = resolveTheirMax(p, draftFloor);
+            const minProfit =
+              draftFloor !== undefined && Number.isFinite(draftFloor)
+                ? computeResellerProfit(draftFloor, p.parentCost)
+                : 0;
+            const maxProfit =
+              theirMax !== undefined && Number.isFinite(theirMax)
+                ? computeResellerProfit(theirMax, p.parentCost)
+                : 0;
             return (
               <tr key={p._id} className={panelTableRowClass}>
                 <td className={cn(panelTableCellClass, 'font-medium text-gray-900')}>
@@ -141,21 +158,12 @@ export default function ResellerSubResellerPricesPage() {
                   )}
                 </td>
                 <td className={panelTableCellClass}>
-                  {editing === p._id ? (
-                    <input
-                      type="number"
-                      step="0.01"
-                      min={p.parentCost}
-                      max={p.maxCeiling}
-                      value={max}
-                      onChange={(e) => setMax(e.target.value)}
-                      className="w-24 px-2 py-1.5 border border-gray-200 rounded-lg text-gray-900 focus:ring-2 focus:ring-gold/50 focus:border-gold outline-none"
-                    />
-                  ) : (
-                    <span className="font-semibold text-violet-700">
-                      {p.assignedMax !== undefined ? formatCurrency(p.assignedMax) : '—'}
-                    </span>
-                  )}
+                  <span className="font-semibold text-violet-700">
+                    {theirMax !== undefined ? formatCurrency(theirMax) : '—'}
+                  </span>
+                  <span className="block text-[10px] text-gray-400">
+                    +{formatCurrency(p.inheritedMarkup)} markup
+                  </span>
                 </td>
                 <td className={panelTableCellClass}>
                   <span className="font-semibold text-emerald-700">
@@ -175,7 +183,6 @@ export default function ResellerSubResellerPricesPage() {
                       onClick={() => {
                         setEditing(p._id);
                         setFloor(String(p.assignedFloor ?? p.parentCost));
-                        setMax(String(p.assignedMax ?? p.maxCeiling));
                         setError('');
                       }}
                     >
@@ -206,7 +213,10 @@ export default function ResellerSubResellerPricesPage() {
       <h1 className="text-xl sm:text-2xl font-bold text-white mb-1">Sub-Reseller Prices</h1>
       {child && (
         <p className="text-sm text-gray-400 mb-6">
-          Override floor and max for <span className="text-white font-medium">{child.fullName}</span> ({child.storeName}).
+          Set a base price for{' '}
+          <span className="text-white font-medium">{child.fullName}</span> ({child.storeName}). Their
+          maximum is calculated automatically as base + your inherited markup (
+          {packages[0] ? formatCurrency(packages[0].inheritedMarkup) : 'markup'} per product).
         </p>
       )}
 

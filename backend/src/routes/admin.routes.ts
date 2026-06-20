@@ -16,6 +16,7 @@ import { Setting } from '../models/Setting';
 import { getDatamaxMtnExpressCost } from '../config/datamaxPrices';
 import { getDateRanges } from '../utils/helpers';
 import { createAgentWithWallet, ensureNetworkPackages } from '../services/seedService';
+import { createResellerAccount } from '../services/resellerAccountService';
 import {
   getSettings,
   depositWithdrawalPool,
@@ -505,7 +506,7 @@ router.post(
     if (!req.file) throw new AppError('Excel file is required');
 
     const buffer = req.file.buffer ?? fs.readFileSync(req.file.path);
-    const result = await importCheckerInventory(type, buffer);
+    const result = await importCheckerInventory(type, buffer, req.file.originalname);
     if (result.imported > 0) {
       await setCheckerStock(type, true);
     }
@@ -694,6 +695,26 @@ router.get('/resellers', asyncHandler(async (_req, res) => {
   });
 
   res.json({ success: true, data });
+}));
+
+router.post('/resellers', requireAdminOtp, asyncHandler(async (req: AuthRequest, res) => {
+  const { fullName, email, phone, password } = req.body;
+  if (!fullName || !email || !phone || !password) throw new AppError('All fields required');
+
+  const user = await createResellerAccount({
+    fullName,
+    email,
+    phone,
+    password,
+    activateImmediately: true,
+  });
+
+  await logAudit(req, 'reseller_create', 'reseller', user._id.toString());
+  res.status(201).json({
+    success: true,
+    data: user,
+    message: 'Reseller account created',
+  });
 }));
 
 router.patch('/resellers/:id/toggle', asyncHandler(async (req: AuthRequest, res) => {
@@ -1057,6 +1078,8 @@ router.get('/settings', asyncHandler(async (_req, res) => {
       totalOwed: poolSummary.totalOwed ?? 0,
       poolShortfall: poolSummary.poolShortfall ?? 0,
       recommendedPoolTopUp: poolSummary.recommendedPoolTopUp ?? 0,
+      resellerEmailOtpEnabled: settings.authSettings?.resellerEmailOtpEnabled !== false,
+      agentEmailOtpEnabled: settings.authSettings?.agentEmailOtpEnabled !== false,
     },
   });
 }));
@@ -1086,7 +1109,13 @@ router.post(
 
 router.put('/settings', requireAdminOtp, asyncHandler(async (req: AuthRequest, res) => {
   const settings = await getSettings();
-  const { processingFeePercent, paystackChargePercent, minWithdrawal } = req.body;
+  const {
+    processingFeePercent,
+    paystackChargePercent,
+    minWithdrawal,
+    resellerEmailOtpEnabled,
+    agentEmailOtpEnabled,
+  } = req.body;
 
   if (paystackChargePercent !== undefined) {
     const fee = Number(paystackChargePercent);
@@ -1109,6 +1138,28 @@ router.put('/settings', requireAdminOtp, asyncHandler(async (req: AuthRequest, r
       throw new AppError('Minimum withdrawal must be at least GHS 1');
     }
     settings.minWithdrawal = min;
+  }
+
+  if (resellerEmailOtpEnabled !== undefined) {
+    if (typeof resellerEmailOtpEnabled !== 'boolean') {
+      throw new AppError('resellerEmailOtpEnabled must be true or false');
+    }
+    if (!settings.authSettings) {
+      settings.authSettings = { resellerEmailOtpEnabled: true, agentEmailOtpEnabled: true };
+    }
+    settings.authSettings.resellerEmailOtpEnabled = resellerEmailOtpEnabled;
+    settings.markModified('authSettings');
+  }
+
+  if (agentEmailOtpEnabled !== undefined) {
+    if (typeof agentEmailOtpEnabled !== 'boolean') {
+      throw new AppError('agentEmailOtpEnabled must be true or false');
+    }
+    if (!settings.authSettings) {
+      settings.authSettings = { resellerEmailOtpEnabled: true, agentEmailOtpEnabled: true };
+    }
+    settings.authSettings.agentEmailOtpEnabled = agentEmailOtpEnabled;
+    settings.markModified('authSettings');
   }
 
   await settings.save();
