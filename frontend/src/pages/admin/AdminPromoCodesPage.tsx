@@ -18,7 +18,12 @@ import {
   panelTableCellClass,
 } from '@/components/ui/PanelTable';
 import AdminPasswordConfirm from '@/components/admin/AdminPasswordConfirm';
+import AdminActionConfirmModal from '@/components/admin/AdminActionConfirmModal';
 import { formatCurrency } from '@/lib/utils';
+
+type PendingDisable =
+  | { type: 'code'; id: string }
+  | { type: 'batch'; batchId: string };
 
 type PackageOption = {
   _id: string;
@@ -84,6 +89,7 @@ export default function AdminPromoCodesPage() {
 
   const [filterStatus, setFilterStatus] = useState('');
   const [filterBatchId, setFilterBatchId] = useState('');
+  const [pendingDisable, setPendingDisable] = useState<PendingDisable | null>(null);
 
   useEffect(() => {
     if (!loading && (!user || user.role !== 'admin')) navigate('/login/admin');
@@ -170,27 +176,14 @@ export default function AdminPromoCodesPage() {
     URL.revokeObjectURL(url);
   };
 
-  const disableCode = async (id: string) => {
-    const otp = prompt('Enter the 6-digit admin OTP from your email:');
-    if (!otp || otp.length !== 6) return;
-    try {
-      await api.patch(`/admin/promo-codes/${id}/disable`, { adminOtp: otp });
-      await load();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to disable code');
+  const confirmDisable = async (adminOtp: string) => {
+    if (!pendingDisable) return;
+    if (pendingDisable.type === 'code') {
+      await api.patch(`/admin/promo-codes/${pendingDisable.id}/disable`, { adminOtp });
+    } else {
+      await api.patch(`/admin/promo-codes/batches/${pendingDisable.batchId}/disable`, { adminOtp });
     }
-  };
-
-  const disableBatch = async (batchId: string) => {
-    if (!confirm('Disable all unused codes in this batch?')) return;
-    const otp = prompt('Enter the 6-digit admin OTP from your email:');
-    if (!otp || otp.length !== 6) return;
-    try {
-      await api.patch(`/admin/promo-codes/batches/${batchId}/disable`, { adminOtp: otp });
-      await load();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to disable batch');
-    }
+    await load();
   };
 
   if (loading || !user) {
@@ -341,7 +334,7 @@ export default function AdminPromoCodesPage() {
                             type="button"
                             variant="outline"
                             size="sm"
-                            onClick={() => disableBatch(b.batchId)}
+                            onClick={() => setPendingDisable({ type: 'batch', batchId: b.batchId })}
                           >
                             Disable unused
                           </Button>
@@ -439,7 +432,12 @@ export default function AdminPromoCodesPage() {
                     </td>
                     <td className={panelTableCellClass}>
                       {row.status === 'active' && (
-                        <Button type="button" variant="outline" size="sm" onClick={() => disableCode(row._id)}>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setPendingDisable({ type: 'code', id: row._id })}
+                        >
                           Disable
                         </Button>
                       )}
@@ -458,6 +456,20 @@ export default function AdminPromoCodesPage() {
           </PanelTable>
         </Card>
       </div>
+
+      {pendingDisable && (
+        <AdminActionConfirmModal
+          title={pendingDisable.type === 'code' ? 'Disable promo code' : 'Disable promo batch'}
+          description={
+            pendingDisable.type === 'batch'
+              ? 'All unused codes in this batch will be revoked.'
+              : 'This code will no longer be usable at checkout.'
+          }
+          confirmLabel="Disable"
+          onClose={() => setPendingDisable(null)}
+          onConfirm={confirmDisable}
+        />
+      )}
     </DashboardLayout>
   );
 }
