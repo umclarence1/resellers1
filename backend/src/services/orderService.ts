@@ -30,6 +30,7 @@ import { env } from '../config/env';
 import { withMongoTransaction, sessionOpts } from '../utils/mongoTransaction';
 import { appendAuditLog } from './immutableAuditService';
 import { normalizeGhanaPhone } from '../utils/phone';
+import { redeemPromoCode } from './promoCodeService';
 
 const getSettings = async () => {
   let settings = await Setting.findOne();
@@ -78,6 +79,10 @@ export interface CreateOrderInput {
   processingFee?: number;
   skipWalletDebit?: boolean;
   walletReference?: string;
+  promoCodeId?: string;
+  promoDiscountGhs?: number;
+  originalSellingPrice?: number;
+  orderNumber?: string;
 }
 
 export function validateAfaDetails(details: CreateOrderInput['afaDetails']): IAfaDetails {
@@ -119,6 +124,8 @@ export const fulfillStorePurchase = async (
   const existing = await Order.findOne({ paystackReference: reference });
   if (existing) return existing;
 
+  const promoCodeId = metadata.promoCodeId ? String(metadata.promoCodeId) : undefined;
+
   const afaRaw = metadata.afaDetails as Record<string, string> | undefined;
   const afaDetails = afaRaw
     ? validateAfaDetails({
@@ -130,7 +137,19 @@ export const fulfillStorePurchase = async (
       })
     : undefined;
 
-  return createOrder({
+  const preassignedOrderNumber = generateOrderNumber();
+  const email = (metadata.customerEmail as string) || customerEmail;
+
+  if (promoCodeId) {
+    await redeemPromoCode({
+      promoCodeId,
+      paystackReference: reference,
+      orderId: preassignedOrderNumber,
+      email,
+    });
+  }
+
+  const order = await createOrder({
     packageId: String(metadata.packageId),
     recipientPhone: afaDetails?.phone || String(metadata.recipientPhone),
     afaDetails,
@@ -140,7 +159,15 @@ export const fulfillStorePurchase = async (
     processingFee: Number(metadata.processingFee),
     source: 'reseller_store',
     paystackReference: reference,
+    promoCodeId,
+    promoDiscountGhs: metadata.promoDiscountGhs ? Number(metadata.promoDiscountGhs) : undefined,
+    originalSellingPrice: metadata.originalSellingPrice
+      ? Number(metadata.originalSellingPrice)
+      : undefined,
+    orderNumber: preassignedOrderNumber,
   });
+
+  return order;
 };
 
 export const createOrder = async (input: CreateOrderInput) => {
@@ -262,7 +289,7 @@ export const createOrder = async (input: CreateOrderInput) => {
     totalAmount,
   });
 
-  const orderNumber = generateOrderNumber();
+  const orderNumber = input.orderNumber ?? generateOrderNumber();
   const orderStatus: OrderStatus =
     isChecker
       ? 'processing'
@@ -297,6 +324,13 @@ export const createOrder = async (input: CreateOrderInput) => {
     status: orderStatus,
     source: input.source,
     paystackReference: input.paystackReference,
+    ...(input.promoCodeId
+      ? {
+          promoCodeId: new mongoose.Types.ObjectId(input.promoCodeId),
+          promoDiscountGhs: input.promoDiscountGhs,
+          originalSellingPrice: input.originalSellingPrice,
+        }
+      : {}),
     fulfillmentProvider: fulfillmentProvider ?? undefined,
     complaintDeadline: new Date(Date.now() + 24 * 60 * 60 * 1000),
   };

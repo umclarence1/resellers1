@@ -41,6 +41,13 @@ import { processPaystackSuccess } from '../services/paymentFulfillmentService';
 import { verifyPayment } from '../utils/paystack';
 import { applyPaystackTransferToWithdrawal } from '../services/paystackPayoutService';
 import {
+  disablePromoBatch,
+  disablePromoCode,
+  generatePromoCodes,
+  listPromoBatches,
+  listPromoCodes,
+} from '../services/promoCodeService';
+import {
   applyOrderStatusUpdate,
   getOrderTracking,
   retryQueuedFulfillmentOrders,
@@ -1539,6 +1546,67 @@ router.get('/audit-logs', requireAdminOtp, asyncHandler(async (req: AuthRequest,
     .sort({ createdAt: -1 })
     .limit(limit);
   res.json({ success: true, data: logs });
+}));
+
+router.get('/promo-codes', asyncHandler(async (req: AuthRequest, res) => {
+  const { packageId, status, batchId, page, limit } = req.query as Record<string, string | undefined>;
+  const data = await listPromoCodes({
+    packageId,
+    status: status as import('../models/PromoCode').PromoCodeStatus | undefined,
+    batchId,
+    page: page ? Number(page) : undefined,
+    limit: limit ? Number(limit) : undefined,
+  });
+  res.json({ success: true, data });
+}));
+
+router.get('/promo-codes/batches', asyncHandler(async (_req: AuthRequest, res) => {
+  const batches = await listPromoBatches();
+  res.json({ success: true, data: batches });
+}));
+
+router.post('/promo-codes/generate', requireAdminOtp, asyncHandler(async (req: AuthRequest, res) => {
+  const { packageId, discountGhs, count, label, expiresAt } = req.body as {
+    packageId?: string;
+    discountGhs?: number;
+    count?: number;
+    label?: string;
+    expiresAt?: string;
+  };
+
+  if (!packageId || discountGhs === undefined || !count) {
+    throw new AppError('Package, discount, and count are required', 400);
+  }
+
+  const parsedExpiry = expiresAt ? new Date(expiresAt) : undefined;
+  if (parsedExpiry && Number.isNaN(parsedExpiry.getTime())) {
+    throw new AppError('Invalid expiry date', 400);
+  }
+
+  const result = await generatePromoCodes({
+    packageId,
+    discountGhs: Number(discountGhs),
+    count: Number(count),
+    label,
+    expiresAt: parsedExpiry,
+    adminId: req.user!._id.toString(),
+  });
+
+  res.status(201).json({ success: true, data: result });
+}));
+
+router.patch(
+  '/promo-codes/batches/:batchId/disable',
+  requireAdminOtp,
+  asyncHandler(async (req: AuthRequest, res) => {
+    const result = await disablePromoBatch(String(req.params.batchId), req.user!._id.toString());
+    res.json({ success: true, data: result });
+  })
+);
+
+router.patch('/promo-codes/:id/disable', requireAdminOtp, asyncHandler(async (req: AuthRequest, res) => {
+  const updated = await disablePromoCode(String(req.params.id), req.user!._id.toString());
+  res.json({ success: true, data: updated });
 }));
 
 export default router;

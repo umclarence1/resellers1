@@ -78,6 +78,12 @@ export const purchaseLimiter = createLimiter('purchase', {
   message: { success: false, message: 'Too many purchase attempts. Please wait a moment.' },
 });
 
+export const promoValidateLimiter = createLimiter('promo-validate', {
+  windowMs: 60 * 1000,
+  max: 20,
+  message: { success: false, message: 'Too many promo validation attempts. Please wait a moment.' },
+});
+
 export const webhookLimiter = createLimiter('webhook', {
   windowMs: 60 * 1000,
   max: 120,

@@ -9,6 +9,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { runValidators, v } from '@/lib/form-validation';
 import { redirectToPaystack } from '@/lib/paystack';
 import { buildStoreHomePath, persistStoreRef, normalizeStoreSlug } from '@/lib/reseller-store-ref';
+import StorePromoCodeInput, { PromoPreview } from '@/components/store/StorePromoCodeInput';
 
 type CheckerType = 'bece' | 'wassce';
 
@@ -47,6 +48,8 @@ export default function StoreCheckerPage() {
   const [email, setEmail] = useState('');
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
+  const [promoCode, setPromoCode] = useState('');
+  const [promoPreview, setPromoPreview] = useState<PromoPreview | null>(null);
 
   useEffect(() => {
     if (!slug) return;
@@ -82,6 +85,7 @@ export default function StoreCheckerPage() {
         type: selected,
         phone,
         email,
+        ...(promoCode ? { promoCode } : {}),
       });
       sessionStorage.setItem('checker_checkout_email', email.trim().toLowerCase());
       redirectToPaystack(res.data.data.authorizationUrl);
@@ -176,19 +180,32 @@ export default function StoreCheckerPage() {
               disabled={!selected || !offer?.inStock}
             />
 
+            <StorePromoCodeInput
+              key={offer?.packageId}
+              slug={slug}
+              packageId={offer?.packageId}
+              disabled={!selected || !offer?.inStock}
+              onApplied={(code, preview) => {
+                setPromoCode(code);
+                setPromoPreview(preview);
+              }}
+            />
+
             {offer?.inStock && offer.price > 0 && (
               <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 space-y-2 text-sm">
                 <div className="flex justify-between text-gray-600">
                   <span>{offer.bundleSize} checker</span>
-                  <span>{formatCurrency(offer.price)}</span>
+                  <span>
+                    {formatCurrency(promoPreview?.discountedSellingPrice ?? offer.price)}
+                  </span>
                 </div>
                 <div className="flex justify-between text-gray-600">
                   <span>Paystack fee ({offer.paystackChargePercent}%)</span>
-                  <span>{formatCurrency(offer.processingFee)}</span>
+                  <span>{formatCurrency(promoPreview?.processingFee ?? offer.processingFee)}</span>
                 </div>
                 <div className="flex justify-between font-semibold text-gray-900 pt-2 border-t border-gray-200">
                   <span>Total to pay</span>
-                  <span>{formatCurrency(offer.total)}</span>
+                  <span>{formatCurrency(promoPreview?.total ?? offer.total)}</span>
                 </div>
               </div>
             )}
@@ -200,7 +217,7 @@ export default function StoreCheckerPage() {
               className="w-full"
             >
               {offer?.inStock && offer.total > 0
-                ? `Pay ${formatCurrency(offer.total)} & Get Checker`
+                ? `Pay ${formatCurrency(promoPreview?.total ?? offer.total)} & Get Checker`
                 : 'Pay & Get Checker'}
             </Button>
           </form>

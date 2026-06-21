@@ -11,6 +11,7 @@ import { StoreTab } from '@/components/store/StoreLayout';
 import { runValidators, v } from '@/lib/form-validation';
 import { redirectToPaystack } from '@/lib/paystack';
 import { buildStoreHomePath, persistStoreRef, normalizeStoreSlug } from '@/lib/reseller-store-ref';
+import StorePromoCodeInput, { PromoPreview } from '@/components/store/StorePromoCodeInput';
 
 export default function StorePurchasePage() {
   const params = useParams();
@@ -32,6 +33,8 @@ export default function StorePurchasePage() {
   const [email, setEmail] = useState('');
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
+  const [promoCode, setPromoCode] = useState('');
+  const [promoPreview, setPromoPreview] = useState<PromoPreview | null>(null);
 
   useEffect(() => {
     if (!slug) return;
@@ -67,6 +70,7 @@ export default function StorePurchasePage() {
         packageId,
         recipientPhone: phone,
         email,
+        ...(promoCode ? { promoCode } : {}),
       });
       redirectToPaystack(res.data.data.authorizationUrl);
     } catch (err) {
@@ -148,9 +152,24 @@ export default function StorePurchasePage() {
               error={fieldErrors.email}
             />
 
+            <StorePromoCodeInput
+              key={packageId}
+              slug={slug}
+              packageId={packageId || undefined}
+              onApplied={(code, preview) => {
+                setPromoCode(code);
+                setPromoPreview(preview);
+              }}
+            />
+
             {selected && (
               <p className="text-sm text-gray-600 text-center">
-                Total: <strong>{formatCurrency(Number(selected.price))}</strong>
+                Total:{' '}
+                <strong>
+                  {formatCurrency(
+                    promoPreview?.total ?? Number(selected.price)
+                  )}
+                </strong>
               </p>
             )}
 

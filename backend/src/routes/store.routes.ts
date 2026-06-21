@@ -25,8 +25,12 @@ import { validateAfaDetails } from '../services/orderService';
 import { getEffectiveBasePrice, getEffectiveMaxPrice, getResellerSellPrice } from '../services/subResellerPricingService';
 import { canAcceptSubResellerSignup } from '../services/resellerStoreReadinessService';
 import { env } from '../config/env';
-import { otpLimiter, purchaseLimiter } from '../middleware/rateLimiter';
+import { otpLimiter, purchaseLimiter, promoValidateLimiter } from '../middleware/rateLimiter';
 import { rejectFields } from '../middleware/rejectFields';
+import {
+  validatePromoForCheckout,
+  computeStoreCheckoutTotals,
+} from '../services/promoCodeService';
 
 const blockStorePricing = rejectFields(
   'sellingPrice',
@@ -34,8 +38,52 @@ const blockStorePricing = rejectFields(
   'totalAmount',
   'profit',
   'processingFee',
-  'expectedTotal'
+  'expectedTotal',
+  'promoCodeId',
+  'promoDiscountGhs',
+  'originalSellingPrice',
+  'discountGhs'
 );
+
+async function resolvePromoCheckout(input: {
+  promoCode?: string;
+  packageId: string;
+  sellingPrice: number;
+  paystackChargePercent: number;
+}) {
+  const base = computeStoreCheckoutTotals(input.sellingPrice, input.paystackChargePercent);
+  if (!input.promoCode?.trim()) {
+    return {
+      ...base,
+      promoCodeId: undefined as string | undefined,
+      promoMetadata: {} as Record<string, unknown>,
+    };
+  }
+
+  const promo = await validatePromoForCheckout({
+    code: input.promoCode,
+    packageId: input.packageId,
+    sellingPrice: input.sellingPrice,
+    paystackChargePercent: input.paystackChargePercent,
+  });
+
+  return {
+    originalSellingPrice: promo.originalSellingPrice,
+    discountedSellingPrice: promo.discountedSellingPrice,
+    discountGhs: promo.discountGhs,
+    processingFee: promo.processingFee,
+    total: promo.total,
+    promoCodeId: promo.promoCodeId,
+    promoMetadata: {
+      promoCodeId: promo.promoCodeId,
+      promoDiscountGhs: promo.discountGhs,
+      originalSellingPrice: promo.originalSellingPrice,
+      sellingPrice: promo.discountedSellingPrice,
+      processingFee: promo.processingFee,
+      expectedTotal: promo.total,
+    },
+  };
+}
 import {
   requestOrderHistoryOtp,
   requestOrderHistoryOtpByPhone,
@@ -273,8 +321,51 @@ router.get('/:slug/checker', asyncHandler(async (req, res) => {
   });
 }));
 
+router.post('/:slug/promo/validate', promoValidateLimiter, asyncHandler(async (req, res) => {
+  const { code, packageId } = req.body as { code?: string; packageId?: string };
+  if (!code?.trim() || !packageId) {
+    throw new AppError('Promo code and package are required', 400);
+  }
+
+  const reseller = await findResellerByStoreSlug(req.params.slug, {
+    requireActiveStore: true,
+  });
+  if (!reseller) throw new AppError('Store not found', 404);
+
+  const pkg = await Package.findById(packageId);
+  if (!pkg || !pkg.isEnabled) throw new AppError('Package not available', 404);
+
+  const sellingPrice = getResellerSellPrice(reseller, pkg._id.toString(), pkg);
+  const settings = await getSettings();
+  const paystackChargePercent = settings.paystackChargePercent ?? 2;
+
+  const promo = await validatePromoForCheckout({
+    code,
+    packageId: pkg._id.toString(),
+    sellingPrice,
+    paystackChargePercent,
+  });
+
+  res.json({
+    success: true,
+    data: {
+      packageId: pkg._id.toString(),
+      originalSellingPrice: promo.originalSellingPrice,
+      discountedSellingPrice: promo.discountedSellingPrice,
+      discountGhs: promo.discountGhs,
+      processingFee: promo.processingFee,
+      total: promo.total,
+    },
+  });
+}));
+
 router.post('/:slug/checker/purchase/init', purchaseLimiter, blockStorePricing, asyncHandler(async (req, res) => {
-  const { type, email, phone } = req.body as { type?: string; email?: string; phone?: string };
+  const { type, email, phone, promoCode } = req.body as {
+    type?: string;
+    email?: string;
+    phone?: string;
+    promoCode?: string;
+  };
   if (!type || !email?.trim() || !phone?.trim()) {
     throw new AppError('Checker type, email, and phone are required');
   }
@@ -297,18 +388,26 @@ router.post('/:slug/checker/purchase/init', purchaseLimiter, blockStorePricing, 
 
   const reference = `CUS-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
 
-  const payment = await initializePayment(email.trim().toLowerCase(), Math.round(offer.total * 100), {
+  const checkout = await resolvePromoCheckout({
+    promoCode,
+    packageId: offer.packageId.toString(),
+    sellingPrice: offer.price,
+    paystackChargePercent: offer.paystackChargePercent,
+  });
+
+  const payment = await initializePayment(email.trim().toLowerCase(), Math.round(checkout.total * 100), {
     type: 'customer_purchase',
     resellerId: reseller._id.toString(),
     packageId: offer.packageId.toString(),
     recipientPhone,
     customerEmail: email.trim().toLowerCase(),
-    sellingPrice: offer.price,
-    processingFee: offer.processingFee,
-    expectedTotal: offer.total,
+    sellingPrice: checkout.discountedSellingPrice,
+    processingFee: checkout.processingFee,
+    expectedTotal: checkout.total,
     reference,
     storeSlug: storeSlugFromRequest(req.params.slug),
     productKind: 'checker',
+    ...checkout.promoMetadata,
   });
 
   res.json({
@@ -357,7 +456,8 @@ router.get('/:slug/faqs', asyncHandler(async (_req, res) => {
 
 // Initialize customer purchase
 router.post('/:slug/purchase/init', purchaseLimiter, blockStorePricing, asyncHandler(async (req, res) => {
-  const { packageId, recipientPhone, email, fullName, ghanaCard, location, occupation } = req.body;
+  const { packageId, recipientPhone, email, fullName, ghanaCard, location, occupation, promoCode } =
+    req.body;
 
   if (!packageId || !email) {
     throw new AppError('Package and email are required');
@@ -392,22 +492,28 @@ router.post('/:slug/purchase/init', purchaseLimiter, blockStorePricing, asyncHan
 
   const settings = await getSettings();
   const paystackChargePercent = settings.paystackChargePercent ?? 2;
-  const processingFee = roundMoney(sellingPrice * (paystackChargePercent / 100));
-  const total = roundMoney(sellingPrice + processingFee);
+
+  const checkout = await resolvePromoCheckout({
+    promoCode,
+    packageId: pkgIdStr,
+    sellingPrice,
+    paystackChargePercent,
+  });
 
   const reference = `CUS-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
 
-  const payment = await initializePayment(email, Math.round(total * 100), {
+  const payment = await initializePayment(email, Math.round(checkout.total * 100), {
     type: 'customer_purchase',
     resellerId: reseller._id.toString(),
     packageId: pkg._id.toString(),
     recipientPhone: phone,
     customerEmail: email.toLowerCase().trim(),
-    sellingPrice,
-    processingFee,
-    expectedTotal: total,
+    sellingPrice: checkout.discountedSellingPrice,
+    processingFee: checkout.processingFee,
+    expectedTotal: checkout.total,
     reference,
     storeSlug: storeSlugFromRequest(req.params.slug),
+    ...checkout.promoMetadata,
     ...(afaDetails
       ? {
           afaDetails: {

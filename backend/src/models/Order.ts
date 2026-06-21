@@ -62,6 +62,9 @@ export interface IOrder extends Document {
   status: OrderStatus;
   source: OrderSource;
   paystackReference?: string;
+  promoCodeId?: mongoose.Types.ObjectId;
+  promoDiscountGhs?: number;
+  originalSellingPrice?: number;
   providerOrderId?: string;
   providerBatchId?: string;
   providerReference?: string;
@@ -159,6 +162,9 @@ const orderSchema = new Schema<IOrder>(
       required: true,
     },
     paystackReference: String,
+    promoCodeId: { type: Schema.Types.ObjectId, ref: 'PromoCode' },
+    promoDiscountGhs: { type: Number, min: 0 },
+    originalSellingPrice: { type: Number, min: 0 },
     providerOrderId: String,
     providerBatchId: String,
     providerReference: String,
