@@ -10,6 +10,7 @@ import { appendAuditLog } from './immutableAuditService';
 export const PROMO_INVALID_MESSAGE = 'Invalid or expired promo code';
 export const MAX_PROMO_BATCH_SIZE = 500;
 export const MIN_CHECKOUT_TOTAL_GHS = 0.5;
+export const MAX_PROMO_DISCOUNT_GHS = 500;
 
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
@@ -77,14 +78,10 @@ function isExpired(doc: Pick<IPromoCode, 'expiresAt'>): boolean {
   return !!doc.expiresAt && doc.expiresAt.getTime() < Date.now();
 }
 
-async function findActivePromoByCode(
-  normalizedCode: string,
-  packageId: string
-): Promise<IPromoCode | null> {
+async function findActivePromoByCode(normalizedCode: string): Promise<IPromoCode | null> {
   const codeHash = hashPromoCode(normalizedCode);
   const doc = await PromoCode.findOne({ codeHash });
   if (!doc) return null;
-  if (doc.packageId.toString() !== packageId) return null;
   if (doc.status !== 'active') return null;
   if (isExpired(doc)) return null;
   return doc;
@@ -101,7 +98,7 @@ export async function validatePromoForCheckout(input: {
     throw new AppError(PROMO_INVALID_MESSAGE, 400);
   }
 
-  const doc = await findActivePromoByCode(normalized, input.packageId);
+  const doc = await findActivePromoByCode(normalized);
   if (!doc) {
     throw new AppError(PROMO_INVALID_MESSAGE, 400);
   }
@@ -171,7 +168,6 @@ export async function redeemPromoCode(input: {
 }
 
 export async function generatePromoCodes(input: {
-  packageId: string;
   discountGhs: number;
   count: number;
   expiresAt?: Date;
@@ -188,13 +184,8 @@ export async function generatePromoCodes(input: {
     throw new AppError('Discount must be greater than zero', 400);
   }
 
-  const pkg = await Package.findById(input.packageId);
-  if (!pkg || !pkg.isEnabled) {
-    throw new AppError('Package not found or disabled', 404);
-  }
-
-  if (discountGhs > pkg.maxSellingPrice) {
-    throw new AppError('Discount cannot exceed package max selling price', 400);
+  if (discountGhs > MAX_PROMO_DISCOUNT_GHS) {
+    throw new AppError(`Discount cannot exceed GHS ${MAX_PROMO_DISCOUNT_GHS}`, 400);
   }
 
   const batchId = `batch-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
@@ -213,7 +204,6 @@ export async function generatePromoCodes(input: {
     docs.push({
       codeHash,
       codeLast4: normalized.slice(-4),
-      packageId: pkg._id,
       discountGhs,
       batchId,
       label: input.label?.trim() || undefined,
@@ -231,9 +221,7 @@ export async function generatePromoCodes(input: {
     entity: 'promo_code_batch',
     entityId: batchId,
     details: {
-      packageId: pkg._id.toString(),
-      network: pkg.network,
-      bundleSize: pkg.bundleSize,
+      scope: 'all_products',
       discountGhs,
       count,
       label: input.label?.trim() || null,
@@ -243,9 +231,7 @@ export async function generatePromoCodes(input: {
 
   return {
     batchId,
-    packageId: pkg._id.toString(),
-    network: pkg.network,
-    bundleSize: pkg.bundleSize,
+    scope: 'all_products' as const,
     discountGhs,
     count,
     codes: plaintextCodes,
@@ -314,8 +300,9 @@ export async function listPromoBatches() {
   return rows.map((row) => ({
     batchId: row._id,
     label: row.label,
-    packageId: row.packageId?.toString(),
-    package: pkgMap.get(row.packageId?.toString() || '') || null,
+    packageId: row.packageId?.toString() || null,
+    package: row.packageId ? pkgMap.get(row.packageId?.toString() || '') || null : null,
+    scope: row.packageId ? 'legacy_package' : 'all_products',
     discountGhs: row.discountGhs,
     createdAt: row.createdAt,
     total: row.total,

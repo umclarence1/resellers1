@@ -5,7 +5,8 @@ export type PromoCodeStatus = 'active' | 'used' | 'disabled' | 'expired';
 export interface IPromoCode extends Document {
   codeHash: string;
   codeLast4: string;
-  packageId: mongoose.Types.ObjectId;
+  /** @deprecated Legacy field — codes apply to all packages. */
+  packageId?: mongoose.Types.ObjectId;
   discountGhs: number;
   batchId: string;
   label?: string;
@@ -24,7 +25,7 @@ const promoCodeSchema = new Schema<IPromoCode>(
   {
     codeHash: { type: String, required: true, unique: true },
     codeLast4: { type: String, required: true },
-    packageId: { type: Schema.Types.ObjectId, ref: 'Package', required: true },
+    packageId: { type: Schema.Types.ObjectId, ref: 'Package', required: false },
     discountGhs: { type: Number, required: true, min: 0.01 },
     batchId: { type: String, required: true, index: true },
     label: { type: String, trim: true },

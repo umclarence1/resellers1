@@ -25,13 +25,12 @@ type PendingDisable =
   | { type: 'code'; id: string }
   | { type: 'batch'; batchId: string };
 
-type PackageOption = {
-  _id: string;
-  network: string;
-  bundleSize: string;
-  productType?: string;
-  maxSellingPrice: number;
-  isEnabled: boolean;
+type GeneratedBatch = {
+  batchId: string;
+  codes: string[];
+  scope: 'all_products';
+  discountGhs: number;
+  count: number;
 };
 
 type PromoRow = {
@@ -44,7 +43,7 @@ type PromoRow = {
   usedAt?: string;
   orderId?: string;
   createdAt: string;
-  packageId?: { network?: string; bundleSize?: string; productType?: string };
+  packageId?: { network?: string; bundleSize?: string; productType?: string } | null;
 };
 
 type BatchRow = {
@@ -56,29 +55,23 @@ type BatchRow = {
   used: number;
   disabled: number;
   createdAt: string;
-  package?: { network?: string; bundleSize?: string; productType?: string };
+  scope?: 'all_products' | 'legacy_package';
+  package?: { network?: string; bundleSize?: string; productType?: string } | null;
 };
 
-type GeneratedBatch = {
-  batchId: string;
-  codes: string[];
-  network: string;
-  bundleSize: string;
-  discountGhs: number;
-  count: number;
-};
+function promoScopeLabel() {
+  return 'All products';
+}
 
 export default function AdminPromoCodesPage() {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
 
-  const [packages, setPackages] = useState<PackageOption[]>([]);
   const [items, setItems] = useState<PromoRow[]>([]);
   const [batches, setBatches] = useState<BatchRow[]>([]);
   const [pageLoading, setPageLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
 
-  const [packageId, setPackageId] = useState('');
   const [discountGhs, setDiscountGhs] = useState('');
   const [count, setCount] = useState('10');
   const [label, setLabel] = useState('');
@@ -104,15 +97,11 @@ export default function AdminPromoCodesPage() {
       if (filterBatchId) params.set('batchId', filterBatchId);
       params.set('limit', '50');
 
-      const [pkgRes, listRes, batchRes] = await Promise.all([
-        api.get('/admin/packages'),
+      const [listRes, batchRes] = await Promise.all([
         api.get(`/admin/promo-codes?${params.toString()}`),
         api.get('/admin/promo-codes/batches'),
       ]);
 
-      setPackages(
-        (pkgRes.data.data as PackageOption[]).filter((p) => p.isEnabled)
-      );
       setItems(listRes.data.data.items as PromoRow[]);
       setBatches(batchRes.data.data as BatchRow[]);
     } catch (err) {
@@ -126,22 +115,16 @@ export default function AdminPromoCodesPage() {
     if (user?.role === 'admin') load();
   }, [user, load]);
 
-  const packageLabel = (p: PackageOption) => {
-    const kind = p.productType && p.productType !== 'data' ? ` (${p.productType})` : '';
-    return `${p.network} ${p.bundleSize}${kind}`;
-  };
-
   const handleGenerate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!packageId || !discountGhs || !count || adminOtp.length !== 6) {
-      alert('Fill in package, discount, count, and admin OTP');
+    if (!discountGhs || !count || adminOtp.length !== 6) {
+      alert('Fill in discount, count, and admin OTP');
       return;
     }
 
     setGenerating(true);
     try {
       const res = await api.post('/admin/promo-codes/generate', {
-        packageId,
         discountGhs: Number(discountGhs),
         count: Number(count),
         label: label.trim() || undefined,
@@ -203,7 +186,7 @@ export default function AdminPromoCodesPage() {
             Promo Codes
           </h1>
           <p className="text-gray-500 mt-1">
-            Generate single-use discount codes tied to a specific package for customer store checkout.
+            Generate single-use discount codes that work on any store purchase — data bundles, AFA, and checkers.
           </p>
         </div>
 
@@ -214,15 +197,6 @@ export default function AdminPromoCodesPage() {
         <Card className="p-4 sm:p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">Generate codes</h2>
           <form onSubmit={handleGenerate} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <Select
-              label="Package"
-              value={packageId}
-              onChange={(e) => setPackageId(e.target.value)}
-              options={[
-                { value: '', label: 'Select package' },
-                ...packages.map((p) => ({ value: p._id, label: packageLabel(p) })),
-              ]}
-            />
             <Input
               label="Discount (GHS off)"
               type="number"
@@ -269,8 +243,8 @@ export default function AdminPromoCodesPage() {
               <div>
                 <h2 className="text-lg font-semibold text-violet-900">Codes generated — save them now</h2>
                 <p className="text-sm text-violet-700 mt-1">
-                  {generated.count} codes for {generated.network} {generated.bundleSize} (
-                  {formatCurrency(generated.discountGhs)} off each). They will not be shown again.
+                  {generated.count} codes ({formatCurrency(generated.discountGhs)} off any product). They will not be
+                  shown again.
                 </p>
               </div>
               <div className="flex gap-2">
@@ -306,7 +280,7 @@ export default function AdminPromoCodesPage() {
                 <thead className={panelTableHeadClass}>
                   <tr>
                     <th className={panelTableTh()}>Batch</th>
-                    <th className={panelTableTh()}>Package</th>
+                    <th className={panelTableTh()}>Scope</th>
                     <th className={panelTableTh()}>Discount</th>
                     <th className={panelTableTh()}>Active</th>
                     <th className={panelTableTh()}>Used</th>
@@ -320,11 +294,7 @@ export default function AdminPromoCodesPage() {
                         <div className="font-medium">{b.label || b.batchId.slice(0, 20)}</div>
                         <div className="text-xs text-gray-500">{new Date(b.createdAt).toLocaleString()}</div>
                       </td>
-                      <td className={panelTableCellClass}>
-                        {b.package
-                          ? `${b.package.network} ${b.package.bundleSize}`
-                          : '—'}
-                      </td>
+                      <td className={panelTableCellClass}>{promoScopeLabel()}</td>
                       <td className={panelTableCellClass}>{formatCurrency(b.discountGhs)}</td>
                       <td className={panelTableCellClass}>{b.active}</td>
                       <td className={panelTableCellClass}>{b.used}</td>
@@ -401,9 +371,7 @@ export default function AdminPromoCodesPage() {
                 {items.map((row) => (
                   <tr key={row._id} className={panelTableRowClass}>
                     <td className={panelTableCellClass}>****{row.codeLast4}</td>
-                    <td className={panelTableCellClass}>
-                      {row.packageId?.network} {row.packageId?.bundleSize}
-                    </td>
+                    <td className={panelTableCellClass}>{promoScopeLabel()}</td>
                     <td className={panelTableCellClass}>{formatCurrency(row.discountGhs)}</td>
                     <td className={panelTableCellClass}>
                       <span

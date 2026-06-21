@@ -1566,16 +1566,15 @@ router.get('/promo-codes/batches', asyncHandler(async (_req: AuthRequest, res) =
 }));
 
 router.post('/promo-codes/generate', requireAdminOtp, asyncHandler(async (req: AuthRequest, res) => {
-  const { packageId, discountGhs, count, label, expiresAt } = req.body as {
-    packageId?: string;
+  const { discountGhs, count, label, expiresAt } = req.body as {
     discountGhs?: number;
     count?: number;
     label?: string;
     expiresAt?: string;
   };
 
-  if (!packageId || discountGhs === undefined || !count) {
-    throw new AppError('Package, discount, and count are required', 400);
+  if (discountGhs === undefined || !count) {
+    throw new AppError('Discount and count are required', 400);
   }
 
   const parsedExpiry = expiresAt ? new Date(expiresAt) : undefined;
@@ -1584,7 +1583,6 @@ router.post('/promo-codes/generate', requireAdminOtp, asyncHandler(async (req: A
   }
 
   const result = await generatePromoCodes({
-    packageId,
     discountGhs: Number(discountGhs),
     count: Number(count),
     label,

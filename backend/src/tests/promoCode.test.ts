@@ -56,7 +56,6 @@ test.after(async () => {
 test.beforeEach(async () => {
   await PromoCode.deleteMany({});
   const generated = await generatePromoCodes({
-    packageId,
     discountGhs: 2,
     count: 3,
     adminId,
@@ -78,7 +77,7 @@ test('computeStoreCheckoutTotals applies fixed GHS discount and fee', () => {
   assert.equal(totals.total, 8.16);
 });
 
-test('validatePromoForCheckout accepts valid code for matching package', async () => {
+test('validatePromoForCheckout accepts valid code for any package', async () => {
   const result = await validatePromoForCheckout({
     code: sampleCode,
     packageId,
@@ -90,7 +89,7 @@ test('validatePromoForCheckout accepts valid code for matching package', async (
   assert.ok(result.promoCodeId);
 });
 
-test('validatePromoForCheckout rejects wrong package', async () => {
+test('validatePromoForCheckout works on a different package', async () => {
   const other = await Package.create({
     network: 'MTN',
     productType: 'data',
@@ -103,16 +102,14 @@ test('validatePromoForCheckout rejects wrong package', async () => {
     sortOrder: 2,
   });
 
-  await assert.rejects(
-    () =>
-      validatePromoForCheckout({
-        code: sampleCode,
-        packageId: other._id.toString(),
-        sellingPrice: 8,
-        paystackChargePercent: 2,
-      }),
-    (err: Error) => err.message === PROMO_INVALID_MESSAGE
-  );
+  const result = await validatePromoForCheckout({
+    code: sampleCode,
+    packageId: other._id.toString(),
+    sellingPrice: 10,
+    paystackChargePercent: 2,
+  });
+  assert.equal(result.discountGhs, 2);
+  assert.equal(result.discountedSellingPrice, 8);
 });
 
 test('redeemPromoCode is single-use', async () => {
@@ -177,7 +174,6 @@ test('hashPromoCode is deterministic', () => {
 
 test('generatePromoCodes stores hashes not plaintext', async () => {
   const generated = await generatePromoCodes({
-    packageId,
     discountGhs: 1,
     count: 2,
     adminId,
@@ -185,8 +181,10 @@ test('generatePromoCodes stores hashes not plaintext', async () => {
 
   const stored = await PromoCode.find({ batchId: generated.batchId }).lean();
   assert.equal(stored.length, 2);
+  assert.equal(generated.scope, 'all_products');
   for (const row of stored) {
     assert.ok(!generated.codes.includes(row.codeHash));
     assert.equal(row.codeHash, hashPromoCode(normalizePromoCode(generated.codes.find((c) => c.endsWith(row.codeLast4))!)));
+    assert.equal(row.packageId, undefined);
   }
 });
