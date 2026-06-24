@@ -11,6 +11,7 @@ import { useNavigate } from 'react-router-dom';
 import { Copy, ExternalLink, Lock, Store, Tag } from 'lucide-react';
 import { runValidators, v } from '@/lib/form-validation';
 import { computeResellerProfit } from '@/lib/reseller-profit';
+import { isValidWhatsAppChannelUrl } from '@/lib/whatsapp-channel';
 import { buildResellerStoreUrl } from '@/lib/reseller-store-ref';
 import NetworkStockBar, { NetworkStockRow } from '@/components/network/NetworkStockBar';
 
@@ -19,6 +20,7 @@ interface StoreData {
   slug: string;
   phone: string;
   whatsapp: string;
+  whatsappChannelUrl?: string;
   supportEmail: string;
   isActive: boolean;
   storeUrl: string | null;
@@ -50,7 +52,13 @@ export default function ResellerStorePage() {
   const { user, loading, setUser } = useAuth();
   const navigate = useNavigate();
   const [store, setStore] = useState<StoreData | null>(null);
-  const [form, setForm] = useState({ storeName: '', phone: '', whatsapp: '', supportEmail: '' });
+  const [form, setForm] = useState({
+    storeName: '',
+    phone: '',
+    whatsapp: '',
+    whatsappChannelUrl: '',
+    supportEmail: '',
+  });
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [packages, setPackages] = useState<PackageRow[]>([]);
   const [pricing, setPricing] = useState<PricingMeta>({
@@ -86,6 +94,7 @@ export default function ResellerStorePage() {
         storeName: data.storeName || '',
         phone: data.phone || '',
         whatsapp: data.whatsapp || '',
+        whatsappChannelUrl: data.whatsappChannelUrl || '',
         supportEmail: data.supportEmail || user?.email || '',
       });
     });
@@ -127,6 +136,12 @@ export default function ResellerStorePage() {
       phone: [v.required('Phone'), v.phone],
       whatsapp: [v.required('WhatsApp'), v.phone],
       supportEmail: [v.required('Support email'), v.email],
+      whatsappChannelUrl: [
+        (value) =>
+          isValidWhatsAppChannelUrl(value)
+            ? null
+            : 'Enter a valid WhatsApp channel or community link (whatsapp.com/channel/… or chat.whatsapp.com/…)',
+      ],
     });
     setFieldErrors(errors);
     if (Object.keys(errors).length) return;
@@ -395,6 +410,19 @@ export default function ResellerStorePage() {
               placeholder="0XXXXXXXXX"
               disabled={!pricing.pricesReady}
             />
+            <Input
+              label="WhatsApp channel or community link (optional)"
+              value={form.whatsappChannelUrl}
+              error={fieldErrors.whatsappChannelUrl}
+              onChange={(e) => updateField('whatsappChannelUrl', e.target.value)}
+              placeholder="https://whatsapp.com/channel/… or https://chat.whatsapp.com/…"
+              disabled={!pricing.pricesReady}
+            />
+            <p className="text-xs text-gray-500 -mt-2">
+              We strongly recommend creating a WhatsApp channel or community so you can keep customers active,
+              promote your business, and send updates. You can skip this for now and add it later — your store link
+              will still work. When added, this link powers the WhatsApp button on your store and outage alerts.
+            </p>
             <Input
               label="Support email"
               type="email"

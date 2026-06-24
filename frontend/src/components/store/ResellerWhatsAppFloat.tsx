@@ -1,22 +1,34 @@
-import { whatsAppLink } from '@/lib/support-contact';
+import { resolveStoreWhatsAppHref } from '@/lib/whatsapp-channel';
 
 type ResellerWhatsAppFloatProps = {
   whatsapp: string;
+  phone?: string;
+  whatsappChannelUrl?: string;
   storeName?: string;
 };
 
-/** Direct WhatsApp chat to the reseller — not a group link. */
-export default function ResellerWhatsAppFloat({ whatsapp, storeName }: ResellerWhatsAppFloatProps) {
-  if (!whatsapp?.trim()) return null;
+export default function ResellerWhatsAppFloat({
+  whatsapp,
+  phone,
+  whatsappChannelUrl,
+  storeName,
+}: ResellerWhatsAppFloatProps) {
+  const greeting = storeName ? `Hi ${storeName}, I need help with my order.` : 'Hi, I need help with my order.';
+  const href = resolveStoreWhatsAppHref({
+    whatsappChannelUrl,
+    whatsapp,
+    phone,
+    message: greeting,
+  });
 
-  const text = storeName ? `Hi ${storeName}, I need help with my order.` : 'Hi, I need help with my order.';
+  if (!href) return null;
 
   return (
     <a
-      href={whatsAppLink(whatsapp, text)}
+      href={href}
       target="_blank"
       rel="noopener noreferrer"
-      aria-label="WhatsApp the store"
+      aria-label={whatsappChannelUrl?.trim() ? 'Join WhatsApp updates' : 'WhatsApp the store'}
       className="fixed bottom-5 right-3 sm:bottom-6 sm:right-6 z-50 group"
       style={{ marginBottom: 'env(safe-area-inset-bottom)' }}
     >

@@ -8,6 +8,7 @@ import { Withdrawal } from '../models/Withdrawal';
 import { Complaint } from '../models/Complaint';
 import { Notification } from '../models/Notification';
 import { getDateRanges, slugify, isValidGhanaPhone } from '../utils/helpers';
+import { parseOptionalWhatsAppChannelUrl } from '../utils/whatsappChannel';
 import { getOrCreateWallet } from '../services/walletService';
 import { validateResellerPrice } from '../services/orderService';
 import { computeResellerProfit, resellerProfitRange } from '../services/resellerProfitService';
@@ -195,6 +196,7 @@ router.get('/store', asyncHandler(async (req: AuthRequest, res) => {
       slug: user.resellerStore.slug,
       phone: user.resellerStore.phone,
       whatsapp: user.resellerStore.whatsapp,
+      whatsappChannelUrl: user.resellerStore.whatsappChannelUrl || '',
       supportEmail: user.resellerStore.supportEmail,
       storeDescription: user.resellerStore.storeDescription || '',
       isActive: user.resellerStore.isActive,
@@ -215,7 +217,7 @@ router.get('/store', asyncHandler(async (req: AuthRequest, res) => {
 }));
 
 router.put('/store', asyncHandler(async (req: AuthRequest, res) => {
-  const { storeName, phone, whatsapp, supportEmail } = req.body;
+  const { storeName, phone, whatsapp, supportEmail, whatsappChannelUrl } = req.body;
   const user = await User.findById(req.user!._id);
   if (!user?.resellerStore) throw new AppError('Store not found');
 
@@ -224,11 +226,19 @@ router.put('/store', asyncHandler(async (req: AuthRequest, res) => {
   if (phone && !isValidGhanaPhone(phone)) throw new AppError('Phone must be 10 digits starting with 0');
   if (whatsapp && !isValidGhanaPhone(whatsapp)) throw new AppError('WhatsApp must be 10 digits starting with 0');
 
+  let parsedChannelUrl: string | undefined;
+  try {
+    parsedChannelUrl = parseOptionalWhatsAppChannelUrl(whatsappChannelUrl);
+  } catch (err) {
+    throw new AppError(err instanceof Error ? err.message : 'Invalid WhatsApp channel link');
+  }
+
   user.resellerStore.storeName = storeName.trim();
   user.resellerStore.slug = await generateUniqueStoreSlug(storeName, user._id.toString());
   if (phone) user.resellerStore.phone = phone;
   if (whatsapp) user.resellerStore.whatsapp = whatsapp;
   if (supportEmail) user.resellerStore.supportEmail = supportEmail.toLowerCase().trim();
+  if (parsedChannelUrl !== undefined) user.resellerStore.whatsappChannelUrl = parsedChannelUrl;
   activateResellerStore(user);
   await user.save();
 
@@ -243,6 +253,7 @@ router.put('/store', asyncHandler(async (req: AuthRequest, res) => {
       slug: user.resellerStore.slug,
       phone: user.resellerStore.phone,
       whatsapp: user.resellerStore.whatsapp,
+      whatsappChannelUrl: user.resellerStore.whatsappChannelUrl || '',
       supportEmail: user.resellerStore.supportEmail,
       isActive: user.resellerStore.isActive,
       pricesReady: pricing.pricesReady,

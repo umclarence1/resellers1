@@ -9,6 +9,8 @@ export interface IResellerStore {
   slug: string;
   phone: string;
   whatsapp: string;
+  /** Optional WhatsApp channel or community invite URL for customer updates. */
+  whatsappChannelUrl?: string;
   supportEmail: string;
   isActive: boolean;
   isVerified: boolean;
@@ -71,6 +73,7 @@ const resellerStoreSchema = new Schema<IResellerStore>(
     slug: { type: String, required: true, lowercase: true },
     phone: { type: String, required: true },
     whatsapp: { type: String, required: true },
+    whatsappChannelUrl: { type: String, trim: true, default: '' },
     supportEmail: { type: String, required: true },
     isActive: { type: Boolean, default: true },
     isVerified: { type: Boolean, default: true },

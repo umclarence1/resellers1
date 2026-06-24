@@ -17,6 +17,7 @@ interface StoreInfo {
   slug: string;
   phone: string;
   whatsapp: string;
+  whatsappChannelUrl?: string;
   supportEmail: string;
   subResellerSignupOpen?: boolean;
   serviceImages: Array<{ network: string; imageUrl: string; isAvailable: boolean }>;
@@ -264,6 +265,7 @@ export default function StoreHomePage() {
               <StoreContactLinks
                 phone={store.phone}
                 whatsapp={store.whatsapp}
+                whatsappChannelUrl={store.whatsappChannelUrl}
                 storeName={store.storeName}
                 layout="stacked"
               />

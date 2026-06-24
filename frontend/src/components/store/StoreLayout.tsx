@@ -14,6 +14,7 @@ interface StoreData {
   slug: string;
   phone: string;
   whatsapp: string;
+  whatsappChannelUrl?: string;
   supportEmail: string;
   subResellerSignupOpen?: boolean;
 }
@@ -126,6 +127,7 @@ export default function StoreLayout({
           <StoreContactLinks
             phone={store.phone}
             whatsapp={store.whatsapp}
+            whatsappChannelUrl={store.whatsappChannelUrl}
             storeName={store.storeName}
             layout="footer"
           />
@@ -135,8 +137,16 @@ export default function StoreLayout({
         </div>
       </footer>
 
-      <ResellerWhatsAppFloat whatsapp={store.whatsapp} storeName={store.storeName} />
-      <StoreMtnOutageAlert />
+      <ResellerWhatsAppFloat
+        whatsapp={store.whatsapp}
+        phone={store.phone}
+        whatsappChannelUrl={store.whatsappChannelUrl}
+        storeName={store.storeName}
+      />
+      <StoreMtnOutageAlert
+        whatsappChannelUrl={store.whatsappChannelUrl}
+        storeName={store.storeName}
+      />
     </div>
   );
 }

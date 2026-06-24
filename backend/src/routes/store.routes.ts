@@ -145,6 +145,7 @@ router.get('/:slug', asyncHandler(async (req, res) => {
       slug: store.slug,
       phone: store.phone,
       whatsapp: store.whatsapp,
+      whatsappChannelUrl: store.whatsappChannelUrl || '',
       supportEmail: store.supportEmail,
       resellerId: reseller._id,
       isVerified: store.isVerified,

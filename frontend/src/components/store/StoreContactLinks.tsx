@@ -1,10 +1,12 @@
 import { MessageCircle, Phone } from 'lucide-react';
 import ContactHelpButton from '@/components/ui/ContactHelpButton';
-import { formatDisplayPhone, whatsAppLink } from '@/lib/support-contact';
+import { formatDisplayPhone } from '@/lib/support-contact';
+import { resolveStoreWhatsAppHref } from '@/lib/whatsapp-channel';
 
 type StoreContactLinksProps = {
   phone: string;
   whatsapp: string;
+  whatsappChannelUrl?: string;
   storeName?: string;
   layout?: 'inline' | 'stacked' | 'footer';
 };
@@ -12,12 +14,19 @@ type StoreContactLinksProps = {
 export default function StoreContactLinks({
   phone,
   whatsapp,
+  whatsappChannelUrl,
   storeName,
   layout = 'inline',
 }: StoreContactLinksProps) {
-  const waPhone = whatsapp || phone;
   const greeting = storeName ? `Hi ${storeName}, I need help with my order.` : 'Hi, I need help with my order.';
   const display = formatDisplayPhone(phone);
+  const waHref = resolveStoreWhatsAppHref({
+    whatsappChannelUrl,
+    whatsapp,
+    phone,
+    message: greeting,
+  });
+  const waLabel = whatsappChannelUrl?.trim() ? 'WhatsApp updates' : 'WhatsApp';
 
   if (layout === 'footer') {
     return (
@@ -32,15 +41,15 @@ export default function StoreContactLinks({
           <Phone className="w-4 h-4 text-gold" />
           Support: {display}
         </ContactHelpButton>
-        {waPhone && (
+        {waHref && (
           <a
-            href={whatsAppLink(waPhone, greeting)}
+            href={waHref}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-2 text-sm text-[#25D366] hover:underline"
           >
             <MessageCircle className="w-4 h-4" />
-            WhatsApp text
+            {waLabel}
           </a>
         )}
       </div>
@@ -60,15 +69,15 @@ export default function StoreContactLinks({
           <Phone className="w-4 h-4" />
           Message {display}
         </ContactHelpButton>
-        {waPhone && (
+        {waHref && (
           <a
-            href={whatsAppLink(waPhone, greeting)}
+            href={waHref}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-full border border-[#25D366] text-[#25D366] font-semibold hover:bg-[#25D366]/10 transition"
           >
             <MessageCircle className="w-4 h-4" />
-            WhatsApp text
+            {waLabel}
           </a>
         )}
       </div>
@@ -86,15 +95,15 @@ export default function StoreContactLinks({
       >
         {display}
       </ContactHelpButton>
-      {waPhone && (
+      {waHref && (
         <a
-          href={whatsAppLink(waPhone, greeting)}
+          href={waHref}
           target="_blank"
           rel="noopener noreferrer"
           className="text-[#25D366] font-medium hover:underline inline-flex items-center gap-1"
         >
           <MessageCircle className="w-4 h-4" />
-          WhatsApp
+          {waLabel}
         </a>
       )}
     </div>

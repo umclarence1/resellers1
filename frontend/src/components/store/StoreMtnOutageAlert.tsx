@@ -3,15 +3,30 @@ import { AlertTriangle, ExternalLink, X } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import { getNetworkImage } from '@/lib/network-images';
 import { cn } from '@/lib/utils';
+import { normalizeWhatsAppChannelUrl } from '@/lib/whatsapp-channel';
 
 const STORAGE_KEY = 'topdealsgh-mtn-outage-alert-v1';
-const WHATSAPP_UPDATES_URL = 'https://chat.whatsapp.com/KFJvUpZIEaxHWeOLbfgTR0';
 
 /** Set to false when MTN maintenance is complete. */
 export const MTN_OUTAGE_ALERT_ENABLED = true;
 
-export default function StoreMtnOutageAlert() {
+type StoreMtnOutageAlertProps = {
+  whatsappChannelUrl?: string;
+  storeName?: string;
+};
+
+export default function StoreMtnOutageAlert({ whatsappChannelUrl, storeName }: StoreMtnOutageAlertProps) {
   const [open, setOpen] = useState(false);
+
+  const channelHref = (() => {
+    const raw = whatsappChannelUrl?.trim();
+    if (!raw) return null;
+    try {
+      return normalizeWhatsAppChannelUrl(raw);
+    } catch {
+      return raw;
+    }
+  })();
 
   useEffect(() => {
     if (!MTN_OUTAGE_ALERT_ENABLED) return;
@@ -50,6 +65,7 @@ export default function StoreMtnOutageAlert() {
   if (!open) return null;
 
   const mtnImage = getNetworkImage('MTN');
+  const updatesLabel = storeName ? `Join ${storeName} on WhatsApp` : 'Join WhatsApp updates';
 
   return (
     <div
@@ -121,18 +137,20 @@ export default function StoreMtnOutageAlert() {
             </p>
           </div>
 
-          <div className="rounded-xl border border-emerald-100 bg-emerald-50/80 px-4 py-3.5">
-            <p className="text-sm font-medium text-emerald-900 mb-2">Stay updated on WhatsApp</p>
-            <a
-              href={WHATSAPP_UPDATES_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 text-sm font-semibold text-emerald-700 hover:text-emerald-800 underline underline-offset-2"
-            >
-              Join our updates group
-              <ExternalLink className="w-4 h-4 shrink-0" />
-            </a>
-          </div>
+          {channelHref && (
+            <div className="rounded-xl border border-emerald-100 bg-emerald-50/80 px-4 py-3.5">
+              <p className="text-sm font-medium text-emerald-900 mb-2">Stay updated on WhatsApp</p>
+              <a
+                href={channelHref}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 text-sm font-semibold text-emerald-700 hover:text-emerald-800 underline underline-offset-2"
+              >
+                {updatesLabel}
+                <ExternalLink className="w-4 h-4 shrink-0" />
+              </a>
+            </div>
+          )}
 
           <p className="text-gray-500 text-sm pt-1">
             We sincerely apologize for the inconvenience and appreciate your patience and support.
@@ -144,13 +162,15 @@ export default function StoreMtnOutageAlert() {
           <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={dismiss}>
             Close
           </Button>
-          <Button
-            type="button"
-            className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 text-white border-0"
-            onClick={() => window.open(WHATSAPP_UPDATES_URL, '_blank', 'noopener,noreferrer')}
-          >
-            Join WhatsApp updates
-          </Button>
+          {channelHref && (
+            <Button
+              type="button"
+              className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 text-white border-0"
+              onClick={() => window.open(channelHref, '_blank', 'noopener,noreferrer')}
+            >
+              {updatesLabel}
+            </Button>
+          )}
         </div>
       </div>
     </div>
