@@ -3,45 +3,46 @@ import { AlertTriangle, ExternalLink, X } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import { getNetworkImage } from '@/lib/network-images';
 import { cn } from '@/lib/utils';
-import { normalizeWhatsAppChannelUrl } from '@/lib/whatsapp-channel';
-
-const STORAGE_KEY = 'topdealsgh-mtn-outage-alert-v1';
+import { normalizeWhatsAppChannelUrl, isValidWhatsAppChannelUrl } from '@/lib/whatsapp-channel';
 
 /** Set to false when MTN maintenance is complete. */
 export const MTN_OUTAGE_ALERT_ENABLED = true;
 
 type StoreMtnOutageAlertProps = {
+  slug: string;
   whatsappChannelUrl?: string;
   storeName?: string;
 };
 
-export default function StoreMtnOutageAlert({ whatsappChannelUrl, storeName }: StoreMtnOutageAlertProps) {
-  const [open, setOpen] = useState(false);
+function resellerChannelHref(whatsappChannelUrl?: string): string | null {
+  const raw = whatsappChannelUrl?.trim();
+  if (!raw || !isValidWhatsAppChannelUrl(raw)) return null;
+  try {
+    return normalizeWhatsAppChannelUrl(raw);
+  } catch {
+    return null;
+  }
+}
 
-  const channelHref = (() => {
-    const raw = whatsappChannelUrl?.trim();
-    if (!raw) return null;
-    try {
-      return normalizeWhatsAppChannelUrl(raw);
-    } catch {
-      return raw;
-    }
-  })();
+export default function StoreMtnOutageAlert({ slug, whatsappChannelUrl, storeName }: StoreMtnOutageAlertProps) {
+  const [open, setOpen] = useState(false);
+  const channelHref = resellerChannelHref(whatsappChannelUrl);
+  const storageKey = `topdealsgh-mtn-outage-alert-v2-${slug || 'store'}`;
 
   useEffect(() => {
     if (!MTN_OUTAGE_ALERT_ENABLED) return;
     try {
-      if (sessionStorage.getItem(STORAGE_KEY) === '1') return;
+      if (sessionStorage.getItem(storageKey) === '1') return;
     } catch {
       /* ignore */
     }
     const timer = window.setTimeout(() => setOpen(true), 400);
     return () => window.clearTimeout(timer);
-  }, []);
+  }, [storageKey]);
 
   const dismiss = () => {
     try {
-      sessionStorage.setItem(STORAGE_KEY, '1');
+      sessionStorage.setItem(storageKey, '1');
     } catch {
       /* ignore */
     }
@@ -155,7 +156,9 @@ export default function StoreMtnOutageAlert({ whatsappChannelUrl, storeName }: S
           <p className="text-gray-500 text-sm pt-1">
             We sincerely apologize for the inconvenience and appreciate your patience and support.
           </p>
-          <p className="text-gray-800 font-medium text-sm">— TopDealsGH Team</p>
+          {storeName && (
+            <p className="text-gray-800 font-medium text-sm">— {storeName}</p>
+          )}
         </div>
 
         <div className="px-5 pb-5 sm:px-6 sm:pb-6 flex flex-col-reverse sm:flex-row gap-2 sm:justify-end">

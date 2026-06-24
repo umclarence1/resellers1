@@ -144,6 +144,7 @@ export default function StoreLayout({
         storeName={store.storeName}
       />
       <StoreMtnOutageAlert
+        slug={store.slug}
         whatsappChannelUrl={store.whatsappChannelUrl}
         storeName={store.storeName}
       />
