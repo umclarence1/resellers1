@@ -12,6 +12,7 @@ import { runValidators, v } from '@/lib/form-validation';
 import { redirectToPaystack } from '@/lib/paystack';
 import { buildStoreHomePath, persistStoreRef, normalizeStoreSlug } from '@/lib/reseller-store-ref';
 import StorePromoCodeInput, { PromoPreview } from '@/components/store/StorePromoCodeInput';
+import { sortPackagesByBundleSize } from '@/lib/bundle-size';
 
 export default function StorePurchasePage() {
   const params = useParams();
@@ -94,6 +95,10 @@ export default function StorePurchasePage() {
 
   if (!store) return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
 
+  const sortedPackages = sortPackagesByBundleSize(
+    packages as Array<{ id?: string; bundleSize: string; price?: number }>
+  );
+
   return (
     <StoreLayout
       store={store as {
@@ -126,7 +131,7 @@ export default function StorePurchasePage() {
               error={fieldErrors.packageId}
               options={[
                 { value: '', label: 'Choose a bundle' },
-                ...packages.map((pkg) => ({
+                ...sortedPackages.map((pkg) => ({
                   value: String(pkg.id),
                   label: `${String(pkg.bundleSize)} — ${formatCurrency(Number(pkg.price))}`,
                 })),

@@ -13,6 +13,7 @@ import { runValidators, v } from '@/lib/form-validation';
 import { computeResellerProfit } from '@/lib/reseller-profit';
 import { isValidWhatsAppChannelUrl } from '@/lib/whatsapp-channel';
 import { buildResellerStoreUrl } from '@/lib/reseller-store-ref';
+import { sortPackagesByBundleSize } from '@/lib/bundle-size';
 import NetworkStockBar, { NetworkStockRow } from '@/components/network/NetworkStockBar';
 
 interface StoreData {
@@ -197,7 +198,7 @@ export default function ResellerStorePage() {
 
   if (loading || !user) return null;
 
-  const grouped = packages.reduce<Record<string, PackageRow[]>>((acc, pkg) => {
+  const grouped = sortPackagesByBundleSize(packages).reduce<Record<string, PackageRow[]>>((acc, pkg) => {
     if (!acc[pkg.network]) acc[pkg.network] = [];
     acc[pkg.network].push(pkg);
     return acc;

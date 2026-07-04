@@ -14,6 +14,7 @@ import { CheckerType, checkerTypeLabel, normalizeCheckerType } from '../config/c
 import { getAllCheckerStock } from '../services/checkerStockService';
 import { getCheckerPackage } from '../services/checkerPackageService';
 import { getAgentPrice } from '../services/agentPricingService';
+import { sortPackagesByBundleSize } from '../utils/bundleSize';
 import { rejectFields } from '../middleware/rejectFields';
 
 const blockClientPricing = rejectFields(
@@ -51,7 +52,9 @@ router.get('/packages', asyncHandler(async (req: AgentApiRequest, res) => {
   const inStock = new Set(stock.filter((s) => s.inStock).map((s) => s.network));
   const filter: Record<string, unknown> = { isEnabled: true, productType: 'data' };
   if (req.query.network) filter.network = req.query.network;
-  const packages = await Package.find(filter).select('network bundleSize agentPrice').sort({ sortOrder: 1 });
+  const packages = sortPackagesByBundleSize(
+    await Package.find(filter).select('network bundleSize agentPrice')
+  );
   const agentId = req.user!._id;
   const filtered = packages.filter((p) => inStock.has(p.network));
   const data = await Promise.all(

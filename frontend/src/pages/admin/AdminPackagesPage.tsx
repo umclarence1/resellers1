@@ -19,6 +19,7 @@ import { useNavigate } from 'react-router-dom';
 import { Loader2, Plus, RefreshCw, Save } from 'lucide-react';
 import NetworkStockBar, { NetworkStockRow } from '@/components/network/NetworkStockBar';
 import AdminAddPackageModal from '@/components/admin/AdminAddPackageModal';
+import { sortPackagesByBundleSize } from '@/lib/bundle-size';
 
 type PackageRow = {
   _id: string;
@@ -251,11 +252,13 @@ export default function AdminPackagesPage() {
     }
   };
 
-  const filtered = filter
-    ? filter === 'Checkers'
-      ? packages.filter((p) => p.productType === 'checker')
-      : packages.filter((p) => p.network === filter && p.productType !== 'checker')
-    : packages;
+  const filtered = sortPackagesByBundleSize(
+    filter
+      ? filter === 'Checkers'
+        ? packages.filter((p) => p.productType === 'checker')
+        : packages.filter((p) => p.network === filter && p.productType !== 'checker')
+      : packages
+  );
   const networks = [...new Set(packages.map((p) => p.network))];
 
   if (loading || !user) return null;

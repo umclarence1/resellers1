@@ -9,6 +9,7 @@ import { Complaint } from '../models/Complaint';
 import { Notification } from '../models/Notification';
 import { getDateRanges, slugify, isValidGhanaPhone } from '../utils/helpers';
 import { parseOptionalWhatsAppChannelUrl } from '../utils/whatsappChannel';
+import { sortPackagesByBundleSize } from '../utils/bundleSize';
 import { getOrCreateWallet } from '../services/walletService';
 import { validateResellerPrice } from '../services/orderService';
 import { computeResellerProfit, resellerProfitRange } from '../services/resellerProfitService';
@@ -275,16 +276,20 @@ router.get('/network-stock', asyncHandler(async (_req, res) => {
 router.get('/prices', asyncHandler(async (req: AuthRequest, res) => {
   const stock = await getNetworkStockList();
   const afaStock = await getAfaStock();
-  const packages = await Package.find({
-    isEnabled: true,
-    network: { $in: RESELLER_STORE_NETWORKS },
-    productType: 'data',
-  }).sort({ network: 1, sortOrder: 1 });
+  const packages = sortPackagesByBundleSize(
+    await Package.find({
+      isEnabled: true,
+      network: { $in: RESELLER_STORE_NETWORKS },
+      productType: 'data',
+    })
+  );
 
-  const checkerPackages = await Package.find({
-    isEnabled: true,
-    productType: 'checker',
-  }).sort({ bundleSize: 1 });
+  const checkerPackages = sortPackagesByBundleSize(
+    await Package.find({
+      isEnabled: true,
+      productType: 'checker',
+    })
+  );
 
   const checkerStock = await getAllCheckerStock();
 
@@ -411,18 +416,20 @@ router.get('/sub-reseller-default-prices', asyncHandler(async (req: AuthRequest,
   const parent = await User.findById(req.user!._id);
   if (!parent?.resellerStore) throw new AppError('Store not found');
 
-  const packages = await Package.find({
-    isEnabled: true,
-    network: { $in: RESELLER_STORE_NETWORKS },
-    productType: 'data',
-  }).sort({ network: 1, sortOrder: 1 });
+  const packages = sortPackagesByBundleSize(
+    await Package.find({
+      isEnabled: true,
+      network: { $in: RESELLER_STORE_NETWORKS },
+      productType: 'data',
+    })
+  );
 
-  const checkerPackages = await Package.find({ isEnabled: true, productType: 'checker' }).sort({
-    bundleSize: 1,
-  });
-  const afaPackages = await Package.find({ isEnabled: true, productType: 'afa' }).sort({
-    bundleSize: 1,
-  });
+  const checkerPackages = sortPackagesByBundleSize(
+    await Package.find({ isEnabled: true, productType: 'checker' })
+  );
+  const afaPackages = sortPackagesByBundleSize(
+    await Package.find({ isEnabled: true, productType: 'afa' })
+  );
 
   const mapRow = (pkg: InstanceType<typeof Package>) => {
     const packageId = pkg._id.toString();
@@ -564,21 +571,27 @@ router.get('/sub-resellers/:childId/prices', asyncHandler(async (req: AuthReques
   const parent = await User.findById(parentId);
   if (!parent?.resellerStore) throw new AppError('Store not found', 404);
 
-  const packages = await Package.find({
-    isEnabled: true,
-    network: { $in: RESELLER_STORE_NETWORKS },
-    productType: 'data',
-  }).sort({ network: 1, sortOrder: 1 });
+  const packages = sortPackagesByBundleSize(
+    await Package.find({
+      isEnabled: true,
+      network: { $in: RESELLER_STORE_NETWORKS },
+      productType: 'data',
+    })
+  );
 
-  const checkerPackages = await Package.find({
-    isEnabled: true,
-    productType: 'checker',
-  }).sort({ bundleSize: 1 });
+  const checkerPackages = sortPackagesByBundleSize(
+    await Package.find({
+      isEnabled: true,
+      productType: 'checker',
+    })
+  );
 
-  const afaPackages = await Package.find({
-    isEnabled: true,
-    productType: 'afa',
-  }).sort({ bundleSize: 1 });
+  const afaPackages = sortPackagesByBundleSize(
+    await Package.find({
+      isEnabled: true,
+      productType: 'afa',
+    })
+  );
 
   const mapRow = (pkg: InstanceType<typeof Package>) => {
     const packageId = pkg._id.toString();

@@ -10,6 +10,7 @@ import { canSubmitComplaint, isComplaintsEnabledForUser } from '../services/sett
 import { upload } from '../middleware/upload';
 import { env } from '../config/env';
 import { getDateRanges } from '../utils/helpers';
+import { sortPackagesByBundleSize } from '../utils/bundleSize';
 import { getOrCreateWallet } from '../services/walletService';
 import { WalletTransaction } from '../models/WalletTransaction';
 import { createOrder, validateBulkOrders, processBulkOrders } from '../services/orderService';
@@ -178,7 +179,7 @@ router.get('/packages', asyncHandler(async (req: AuthRequest, res) => {
     }
     filter.network = network;
   }
-  const packages = await Package.find(filter).sort({ sortOrder: 1 });
+  const packages = sortPackagesByBundleSize(await Package.find(filter));
   const agentId = req.user!._id;
   const filtered = packages.filter((p) => inStock.has(p.network));
   const data = await Promise.all(

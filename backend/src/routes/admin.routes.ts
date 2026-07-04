@@ -15,6 +15,7 @@ import { AuditLog } from '../models/AuditLog';
 import { Setting } from '../models/Setting';
 import { getDatamaxMtnExpressCost } from '../config/datamaxPrices';
 import { getDateRanges } from '../utils/helpers';
+import { parseBundleSizeMb, sortPackagesByBundleSize } from '../utils/bundleSize';
 import { createAgentWithWallet, ensureNetworkPackages } from '../services/seedService';
 import { createResellerAccount } from '../services/resellerAccountService';
 import {
@@ -333,7 +334,7 @@ router.get('/agents/:id/prices', asyncHandler(async (req, res) => {
   const agent = await User.findOne({ _id: req.params.id, role: 'agent' });
   if (!agent) throw new AppError('Agent not found', 404);
 
-  const packages = await Package.find({ isEnabled: true }).sort({ sortOrder: 1 });
+  const packages = sortPackagesByBundleSize(await Package.find({ isEnabled: true }));
   const data = packages.map((pkg) => {
     const customPrice = agent.agentApi?.customPrices?.get(pkg._id.toString()) ?? null;
     return {
@@ -581,7 +582,7 @@ router.get('/checkers', asyncHandler(async (req, res) => {
 }));
 
 router.get('/packages', asyncHandler(async (_req, res) => {
-  const packages = await Package.find().sort({ network: 1, sortOrder: 1 });
+  const packages = sortPackagesByBundleSize(await Package.find());
   const data = packages.map((pkg) => ({
     ...pkg.toObject(),
     ...resellerProfitRange(pkg.resellerBasePrice, pkg.maxSellingPrice),
@@ -594,7 +595,7 @@ router.get('/packages', asyncHandler(async (_req, res) => {
 
 router.post('/packages/seed', asyncHandler(async (req: AuthRequest, res) => {
   await ensureNetworkPackages();
-  const packages = await Package.find().sort({ network: 1, sortOrder: 1 });
+  const packages = sortPackagesByBundleSize(await Package.find());
   await logAudit(req, 'seed', 'package');
   res.json({ success: true, data: packages, message: 'Packages loaded' });
 }));
@@ -622,7 +623,7 @@ router.post('/packages', asyncHandler(async (req: AuthRequest, res) => {
   }
 
   const latest = await Package.findOne().sort({ sortOrder: -1 }).select('sortOrder');
-  const sortOrder = (latest?.sortOrder ?? -1) + 1;
+  const sortOrder = parseBundleSizeMb(bundleSize) || (latest?.sortOrder ?? -1) + 1;
 
   const pkg = await Package.create({
     network,

@@ -1,6 +1,7 @@
 import { IUser } from '../models/User';
 import { Package } from '../models/Package';
 import { AppError } from '../middleware/errorHandler';
+import { comparePackagesByNetworkAndSize } from '../utils/bundleSize';
 import {
   getParentAssignedPrice,
   getSubResellerDefaultFloor,
@@ -37,7 +38,7 @@ export async function getAllSellablePackages() {
       const order = { data: 0, afa: 1, checker: 2 };
       return (order[a.productType as keyof typeof order] ?? 9) - (order[b.productType as keyof typeof order] ?? 9);
     }
-    return (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
+    return comparePackagesByNetworkAndSize(a, b);
   });
 }
 

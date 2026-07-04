@@ -22,6 +22,7 @@ import {
 import { getAllCheckerStock } from '../services/checkerStockService';
 import { getCheckerPackage } from '../services/checkerPackageService';
 import { validateAfaDetails } from '../services/orderService';
+import { sortPackagesByBundleSize } from '../utils/bundleSize';
 import { getEffectiveBasePrice, getEffectiveMaxPrice, getResellerSellPrice } from '../services/subResellerPricingService';
 import { canAcceptSubResellerSignup } from '../services/resellerStoreReadinessService';
 import { env } from '../config/env';
@@ -198,11 +199,13 @@ router.get('/:slug/packages/:network', asyncHandler(async (req, res) => {
   const network = decodeURIComponent(req.params.network as string) as Network;
   await assertNetworkInStock(network);
 
-  const packages = await Package.find({
-    network,
-    productType: 'data',
-    isEnabled: true,
-  }).sort({ sortOrder: 1 });
+  const packages = sortPackagesByBundleSize(
+    await Package.find({
+      network,
+      productType: 'data',
+      isEnabled: true,
+    })
+  );
 
   const priced = packages.map((pkg) => {
     const packageId = pkg._id.toString();
