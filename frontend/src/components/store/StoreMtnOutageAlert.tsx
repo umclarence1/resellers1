@@ -4,8 +4,8 @@ import Button from '@/components/ui/Button';
 import { cn } from '@/lib/utils';
 import { normalizeWhatsAppChannelUrl, isValidWhatsAppChannelUrl } from '@/lib/whatsapp-channel';
 
-/** Set to false when all services are back to normal. */
-export const MTN_OUTAGE_ALERT_ENABLED = true;
+/** Disabled — service status popup removed from reseller stores. */
+export const MTN_OUTAGE_ALERT_ENABLED = false;
 
 type ServiceStatus = 'available' | 'unavailable';
 

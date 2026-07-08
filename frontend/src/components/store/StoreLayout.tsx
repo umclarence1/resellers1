@@ -4,7 +4,6 @@ import { Menu, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import StoreContactLinks from '@/components/store/StoreContactLinks';
 import ResellerWhatsAppFloat from '@/components/store/ResellerWhatsAppFloat';
-import StoreMtnOutageAlert from '@/components/store/StoreMtnOutageAlert';
 import { buildStoreBecomeResellerPath } from '@/lib/reseller-store-ref';
 
 export type StoreTab = 'home' | 'services' | 'history' | 'faq' | 'contact';
@@ -140,11 +139,6 @@ export default function StoreLayout({
       <ResellerWhatsAppFloat
         whatsapp={store.whatsapp}
         phone={store.phone}
-        whatsappChannelUrl={store.whatsappChannelUrl}
-        storeName={store.storeName}
-      />
-      <StoreMtnOutageAlert
-        slug={store.slug}
         whatsappChannelUrl={store.whatsappChannelUrl}
         storeName={store.storeName}
       />
