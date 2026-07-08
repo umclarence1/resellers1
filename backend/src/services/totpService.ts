@@ -32,7 +32,7 @@ export function verifyTotpCode(secret: string, token: string): boolean {
   });
 }
 
-export function getUserTotpSecret(user: IUser): string | null {
+export function getUserTotpSecret(user: Pick<IUser, 'totpSecretEnc'>): string | null {
   if (!user.totpSecretEnc) return null;
   try {
     return decryptSecret(user.totpSecretEnc);

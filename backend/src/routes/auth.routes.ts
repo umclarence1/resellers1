@@ -44,6 +44,13 @@ import { validatePasswordStrength } from '../utils/password';
 import { activateResellerStore } from '../services/resellerOnboardingService';
 import { createResellerAccount } from '../services/resellerAccountService';
 import { isRoleEmailOtpEnabled, shouldSkipEmailOtpForUser } from '../services/settingsService';
+import {
+  findUserForAuthLogin,
+  matchesLoginPortal,
+  normalizeAuthEmail,
+  prefersTotpLogin,
+  repairLegacyAgentAccount,
+} from '../services/authLoginService';
 import { rejectFields } from '../middleware/rejectFields';
 import { canAcceptSubResellerSignup } from '../services/resellerStoreReadinessService';
 import {
@@ -374,25 +381,28 @@ router.post(
     const { email, password, role } = req.body;
     if (!email || !password) throw new AppError('Email and password required');
 
-    const user = await User.findOne({ email: email.toLowerCase() });
+    const normalizedEmail = normalizeAuthEmail(email);
+    const user = await findUserForAuthLogin(normalizedEmail);
     if (!user) {
-      await recordFailedLogin(null, email, req.ip);
+      await recordFailedLogin(null, normalizedEmail, req.ip);
       throw new AppError('Invalid credentials');
     }
+
+    await repairLegacyAgentAccount(user);
 
     if (isLoginLocked(user)) {
       throw new AppError('Too many failed attempts. Try again later.');
     }
 
     if (!role) throw new AppError('Login portal is required');
-    if (user.role !== role) {
-      await recordFailedLogin(user, email, req.ip);
+    if (!matchesLoginPortal(user, role)) {
+      await recordFailedLogin(user, normalizedEmail, req.ip);
       throw new AppError('Invalid credentials');
     }
 
     const valid = await bcrypt.compare(password, user.password);
     if (!valid) {
-      await recordFailedLogin(user, email, req.ip);
+      await recordFailedLogin(user, normalizedEmail, req.ip);
       throw new AppError('Invalid credentials');
     }
 
@@ -413,6 +423,7 @@ router.post(
       }
       await user.save();
       const result = await issueAuthSession(user);
+      res.cookie('refreshToken', result.refreshToken, refreshTokenCookieOptions);
       res.json({
         success: true,
         message: 'Login successful',
@@ -421,12 +432,12 @@ router.post(
       return;
     }
 
-    const prefersTotp = user.totpEnabled === true;
+    const prefersTotp = prefersTotpLogin(user);
     if (!prefersTotp) {
-      await sendAuthOtpOrFail(email);
+      await sendAuthOtpOrFail(normalizedEmail);
     } else if (roleRequiresMfa(user.role)) {
-      void createAndSendOtp(email).catch((err) => {
-        console.error('[Login backup OTP email failed]', email, err instanceof Error ? err.message : err);
+      void createAndSendOtp(normalizedEmail).catch((err) => {
+        console.error('[Login backup OTP email failed]', normalizedEmail, err instanceof Error ? err.message : err);
       });
     }
 
@@ -454,7 +465,8 @@ router.post(
     const { email, totp } = req.body;
     if (!email || !totp) throw new AppError('Email and authenticator code required');
 
-    const user = await User.findOne({ email: email.toLowerCase() }).select('+totpSecretEnc');
+    const normalizedEmail = normalizeAuthEmail(email);
+    const user = await User.findOne({ email: normalizedEmail }).select('+totpSecretEnc');
     if (!user) throw new AppError('Invalid credentials', 401);
 
     assertTotpCode(user, String(totp));
@@ -487,13 +499,14 @@ router.post(
     const { email, otp } = req.body;
     if (!email || !otp) throw new AppError('Email and OTP required');
 
-    const valid = await verifyOtp(email, otp);
+    const normalizedEmail = normalizeAuthEmail(email);
+    const valid = await verifyOtp(normalizedEmail, otp);
     if (!valid) {
-      await incrementOtpAttempts(email);
+      await incrementOtpAttempts(normalizedEmail);
       throw new AppError('Invalid or expired OTP');
     }
 
-    const user = await User.findOne({ email: email.toLowerCase() });
+    const user = await User.findOne({ email: normalizedEmail });
     if (!user) throw new AppError('User not found');
 
     user.lastLogin = new Date();
@@ -618,9 +631,10 @@ router.post(
     const { email } = req.body;
     if (!email) throw new AppError('Email required');
 
-    const user = await User.findOne({ email: email.toLowerCase() });
+    const normalizedEmail = normalizeAuthEmail(email);
+    const user = await User.findOne({ email: normalizedEmail });
     if (user) {
-      await sendAuthOtpOrFail(email);
+      await sendAuthOtpOrFail(normalizedEmail);
     }
     res.json({ success: true, message: 'If an account exists, a new OTP has been sent.' });
   })

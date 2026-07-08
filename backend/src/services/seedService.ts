@@ -257,6 +257,7 @@ export const createAgentWithWallet = async (data: {
 
   const agent = await User.create({
     ...data,
+    email: data.email.toLowerCase().trim(),
     password: hashedPassword,
     role: 'agent',
     status: 'active',
