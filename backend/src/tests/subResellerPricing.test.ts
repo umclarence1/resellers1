@@ -72,11 +72,11 @@ test('getEffectiveMaxPrice derives max from assigned base + inherited markup', (
   assert.equal(getEffectiveMaxPrice(user, 'pkg1', pkg), 25);
 });
 
-test('getEffectiveMaxPrice uses own sell price for top-level reseller', () => {
+test('getEffectiveMaxPrice uses admin max for top-level reseller even with custom sell price', () => {
   const user = mockReseller({
     customPrices: new Map([['pkg1', 18]]),
   });
-  assert.equal(getEffectiveMaxPrice(user, 'pkg1', pkg), 18);
+  assert.equal(getEffectiveMaxPrice(user, 'pkg1', pkg), 20);
 });
 
 test('getResellerSellPrice prefers custom price over effective base', () => {
@@ -98,20 +98,20 @@ test('getParentAssignableRange exposes inherited markup', () => {
   const parent = mockReseller({ customPrices: new Map([['pkg1', 18]]) });
   const range = getParentAssignableRange(parent, 'pkg1', pkg);
   assert.equal(range.parentCost, 6);
-  assert.equal(range.maxCeiling, 18);
+  assert.equal(range.maxCeiling, 20);
   assert.equal(range.inheritedMarkup, 10);
 });
 
 test('validateSubResellerFloor rejects base below parent cost', () => {
-  assert.throws(() => validateSubResellerFloor(5, 6, 18), /below your cost/i);
+  assert.throws(() => validateSubResellerFloor(5, 6, 20), /below your cost/i);
 });
 
 test('validateSubResellerFloor rejects base above parent max sell price', () => {
-  assert.throws(() => validateSubResellerFloor(19, 6, 18), /maximum selling price/i);
+  assert.throws(() => validateSubResellerFloor(21, 6, 20), /maximum selling price/i);
 });
 
 test('validateFloorMaxRange rejects max below floor', () => {
-  assert.throws(() => validateFloorMaxRange(8, 7, 6, 18), /below floor/i);
+  assert.throws(() => validateFloorMaxRange(8, 7, 6, 20), /below floor/i);
 });
 
 test('splitProfitsFromBaseChain: 3-tier example from plan', () => {
@@ -151,7 +151,7 @@ test('3-tier cascade: grandchild max grows with assigned base + same markup', ()
   const parent = mockReseller({
     parentAssignedPrices: new Map([['pkg1', 8]]),
   });
-  assert.equal(getParentAssignableRange(grandparent, 'pkg1', pkg).maxCeiling, 18);
+  assert.equal(getParentAssignableRange(grandparent, 'pkg1', pkg).maxCeiling, 20);
   assert.equal(getEffectiveMaxPrice(parent, 'pkg1', pkg), 18);
   const child = mockReseller({
     parentAssignedPrices: new Map([['pkg1', 15]]),

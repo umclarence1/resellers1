@@ -66,7 +66,11 @@ export function getEffectiveBasePrice(
   return assigned ?? pkg.resellerBasePrice;
 }
 
-/** Cascading max: sub-reseller base + inherited markup, else own sell price, else admin max. */
+/**
+ * Cascading max:
+ * - sub-reseller with parent floor → floor + inherited admin markup
+ * - otherwise → admin package max (never the reseller's own sell price)
+ */
 export function getEffectiveMaxPrice(
   user: IUser,
   packageId: string,
@@ -76,9 +80,6 @@ export function getEffectiveMaxPrice(
   if (assignedFloor !== undefined) {
     return computeSubResellerMaxFromFloor(assignedFloor, pkg);
   }
-
-  const ownSell = getCustomPrice(user, packageId);
-  if (ownSell !== undefined) return ownSell;
 
   return pkg.maxSellingPrice;
 }
